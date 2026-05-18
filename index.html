@@ -229,8 +229,9 @@
   <div id="login-box">
     <div class="login-title">Support Chat</div>
     <div class="login-sub">Enter your credentials to start a session</div>
+    <input type="text" id="login-server" placeholder="Server URL" />
     <input type="text" id="login-key" placeholder="X-Shared-Key" />
-    <input type="text" id="login-uid" placeholder="User ID (UUID)"
+    <input type="text" id="login-uid" placeholder="User ID (UUID)" value="e024b48c-f061-47b5-ba42-c4bb1a859ea6"
            onkeydown="if(event.key==='Enter') doLogin()" style="font-family:monospace;" />
     <button class="login-btn" onclick="doLogin()">Start Chat</button>
     <div class="login-err" id="login-err"></div>
@@ -239,7 +240,7 @@
 
 <div id="config">
   <label>Server</label>
-  <input type="text" name="server" value="http://127.0.0.1:9090" />
+  <input type="text" name="server" placeholder="Server URL" />
   <label>Key</label>
   <input type="text" name="key" placeholder="X-Shared-Key" />
   <div id="user-chip" style="display:none;"></div>
@@ -389,13 +390,16 @@
   }
 
   async function doLogin() {
-    const key = document.getElementById('login-key').value.trim();
-    const uid = document.getElementById('login-uid').value.trim();
+    const server = document.getElementById('login-server').value.trim();
+    const key    = document.getElementById('login-key').value.trim();
+    const uid    = document.getElementById('login-uid').value.trim();
     const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!server) { errMsg('Server URL is required.'); return; }
     if (!key) { errMsg('API key is required.'); return; }
     if (!uid || !uuidRe.test(uid)) { errMsg('Enter a valid user UUID.'); return; }
 
-    // Sync key into the config bar so all subsequent calls use it
+    // Sync into the config bar so all subsequent calls use these values
+    document.querySelector('#config input[name="server"]').value = server;
     document.querySelector('#config input[name="key"]').value = key;
     clientUserId = uid;
     errMsg('');
