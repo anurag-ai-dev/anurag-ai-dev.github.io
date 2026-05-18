@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Handoff Test Client</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-base: #09090b;
+      --bg-panel: #18181b;
+      --bg-input: #27272a;
+      --border-color: #27272a;
+      --border-focus: #3f3f46;
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+      
+      --color-user: #10b981;
+      --color-user-bg: #064e3b;
+      
+      --color-agent: #6366f1;
+      --color-agent-bg: #312e81;
+      
+      --color-laravel: #f59e0b;
+      --color-laravel-bg: #78350f;
+
+      --color-danger: #ef4444;
+      --color-danger-bg: #7f1d1d;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px; 
+      background: var(--bg-base); 
+      color: var(--text-main);
+      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── login screen ── */
+    #login-screen {
+      position: fixed; inset: 0; background: rgba(9, 9, 11, 0.85);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center; z-index: 100;
+    }
+    #login-box {
+      background: var(--bg-panel); border: 1px solid var(--border-color); 
+      border-radius: 16px; padding: 40px; display: flex; flex-direction: column; 
+      gap: 16px; width: 360px; box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+    #login-box .login-title { font-size: 20px; font-weight: 600; color: var(--text-main); letter-spacing: -0.02em; }
+    #login-box .login-sub   { font-size: 13px; color: var(--text-muted); margin-top: -8px; }
+    #login-box input {
+      background: var(--bg-input); border: 1px solid transparent; color: var(--text-main);
+      padding: 12px 14px; border-radius: 10px; font-size: 14px; outline: none;
+      transition: all 0.2s ease;
+    }
+    #login-box input:focus { border-color: var(--color-user); background: var(--bg-panel); }
+    #login-box .login-btn {
+      padding: 12px; background: var(--text-main); color: var(--bg-base);
+      border: none; border-radius: 10px; cursor: pointer; font-size: 14px;
+      font-weight: 600; transition: all 0.2s ease; margin-top: 8px;
+    }
+    #login-box .login-btn:hover { background: #d4d4d8; transform: translateY(-1px); }
+    #login-box .login-err { font-size: 12px; color: var(--color-danger); display: none; margin-top: -4px; }
+
+    /* ── config bar ── */
+    #config {
+      padding: 12px 20px; background: var(--bg-panel); border-bottom: 1px solid var(--border-color);
+      display: flex; gap: 16px; align-items: center; flex-shrink: 0;
+    }
+    #config label { color: var(--text-muted); font-size: 12px; font-weight: 500; }
+    #config input {
+      background: var(--bg-input); border: 1px solid transparent; color: var(--text-main);
+      padding: 6px 12px; border-radius: 6px; font-family: monospace; font-size: 12px;
+      transition: border-color 0.2s;
+    }
+    #config input:focus { border-color: var(--border-focus); outline: none; }
+    #config input[name="server"] { width: 220px; }
+    #config input[name="key"]    { width: 240px; }
+    #user-chip {
+      margin-left: auto; font-size: 12px; color: var(--color-user); font-weight: 500;
+      background: var(--color-user-bg); border: 1px solid rgba(16, 185, 129, 0.2);
+      padding: 4px 12px; border-radius: 20px;
+    }
+
+    /* ── panels ── */
+    #panels { display: flex; flex: 1; overflow: hidden; padding: 16px; gap: 16px; }
+    .panel  { 
+      flex: 1; display: flex; flex-direction: column; 
+      background: var(--bg-panel); border: 1px solid var(--border-color); 
+      border-radius: 12px; overflow: hidden;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .panel-header {
+      padding: 14px 16px; font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0;
+      border-bottom: 1px solid var(--border-color); background: rgba(255,255,255,0.02);
+    }
+    #user-panel    .panel-header { color: var(--color-user); }
+    #laravel-panel .panel-header { color: var(--color-laravel); }
+    #agent-panel   .panel-header { color: var(--color-agent); }
+
+    .panel-body { display: flex; flex-direction: column; flex: 1; overflow: hidden; padding: 16px; gap: 12px; }
+
+    /* ── form elements ── */
+    .section { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+    .row     { display: flex; gap: 10px; align-items: center; }
+    .row label { color: var(--text-muted); font-size: 12px; width: 60px; flex-shrink: 0; font-weight: 500; }
+
+    input[type="text"] {
+      background: var(--bg-input); border: 1px solid transparent; color: var(--text-main);
+      padding: 8px 12px; border-radius: 8px; font-size: 13px; flex: 1;
+      transition: all 0.2s ease;
+    }
+    input[type="text"]::placeholder { color: #52525b; }
+    input[type="text"]:focus { outline: none; border-color: var(--border-focus); background: var(--bg-base); }
+
+    select {
+      background: var(--bg-input); border: 1px solid transparent; color: var(--text-main);
+      padding: 8px 10px; border-radius: 8px; font-size: 12px; flex: 1; outline: none;
+      cursor: pointer;
+    }
+
+    button {
+      padding: 8px 16px; border-radius: 8px; border: none;
+      cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+    button:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
+    button:active:not(:disabled) { transform: translateY(0); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn-user    { background: var(--color-user); color: #000; }
+    .btn-agent   { background: var(--color-agent); color: #fff; }
+    .btn-laravel { background: var(--color-laravel); color: #000; }
+    .btn-danger  { background: var(--color-danger); color: #fff; }
+    .btn-warn    { background: var(--bg-input); border: 1px solid var(--border-focus); color: var(--text-main); }
+
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #3f3f46; flex-shrink: 0; transition: background 0.3s; }
+    .status-dot.connected { background: var(--color-user); box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+
+    /* ── chat area ── */
+    .chat-area {
+      flex: 1; overflow-y: auto; background: var(--bg-base);
+      border: 1px solid var(--border-color); border-radius: 10px;
+      padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0;
+    }
+    .chat-msg { display: flex; flex-direction: column; gap: 4px; max-width: 85%; align-items: flex-start; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .chat-msg .cm-meta { font-size: 11px; color: var(--text-muted); padding: 0 4px; font-weight: 500; }
+    .chat-msg .cm-text {
+      padding: 10px 14px; border-radius: 14px; font-size: 13px;
+      line-height: 1.5; word-break: break-word; border: 1px solid transparent;
+    }
+
+    .chat-msg.user-out  { align-self: flex-end; align-items: flex-end; }
+    .chat-msg.user-out  .cm-text { background: var(--color-user-bg); color: #a7f3d0; border-radius: 14px 14px 2px 14px; }
+    
+    .chat-msg.bot       .cm-text { background: var(--bg-input); color: var(--text-main); border-radius: 14px 14px 14px 2px; }
+    
+    .chat-msg.agent-in  .cm-text { background: var(--color-agent-bg); color: #c7d2fe; border-radius: 14px 14px 14px 2px; }
+    
+    .chat-msg.client    .cm-text { background: var(--bg-input); color: var(--text-main); border-radius: 14px 14px 14px 2px; }
+    
+    .chat-msg.agent     { align-self: flex-end; align-items: flex-end; }
+    .chat-msg.agent     .cm-text { background: var(--color-agent-bg); color: #c7d2fe; border-radius: 14px 14px 2px 14px; }
+    
+    .chat-msg.assistant .cm-text { background: var(--bg-input); color: var(--text-main); border-radius: 14px 14px 14px 2px; opacity: 0.8; }
+    
+    .chat-msg.system-msg         { align-self: center; max-width: 100%; }
+    .chat-msg.system-msg .cm-text {
+      background: transparent; border: none; padding: 4px;
+      color: var(--text-muted); font-size: 12px; text-align: center; font-weight: 500;
+    }
+
+    .chat-input-row { display: flex; gap: 8px; flex-shrink: 0; margin-top: 4px; }
+
+    /* ── agent incoming card ── */
+    #a-incoming {
+      display: none; padding: 16px; background: rgba(99, 102, 241, 0.05);
+      border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 10px;
+      flex-direction: column; gap: 10px; flex-shrink: 0;
+    }
+    #a-incoming.visible { display: flex; animation: fadeIn 0.3s ease; }
+    .incoming-label  { font-size: 11px; font-weight: 700; color: var(--color-agent); text-transform: uppercase; letter-spacing: 0.05em; }
+    .incoming-detail { font-size: 14px; color: var(--text-main); font-weight: 500; }
+    .incoming-sub    { font-size: 12px; color: var(--text-muted); }
+
+    /* ── laravel queue ── */
+    .handoff-queue { display: flex; flex-direction: column; gap: 8px; max-height: 180px; overflow-y: auto; padding-right: 4px; }
+    .handoff-card {
+      padding: 12px; background: var(--bg-base); border: 1px solid var(--border-color); border-radius: 8px;
+      display: flex; flex-direction: column; gap: 6px; transition: border-color 0.2s;
+    }
+    .handoff-card:hover { border-color: rgba(245, 158, 11, 0.3); }
+    .hc-name    { font-size: 13px; color: var(--color-laravel); font-weight: 600; }
+    .hc-session { font-family: monospace; font-size: 11px; color: var(--text-muted); }
+    .hc-meta    { font-size: 11px; color: #52525b; }
+    .hc-row     { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+
+    .agent-list  { display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; padding-right: 4px; }
+    .agent-item  { 
+      padding: 8px 12px; background: var(--bg-base); border: 1px solid var(--border-color); 
+      border-radius: 6px; font-size: 12px; color: var(--text-main); display: flex; align-items: center; gap: 8px;
+    }
+    .agent-item::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-agent); }
+
+    .divider { border-top: 1px solid var(--border-color); flex-shrink: 0; margin: 4px 0; }
+    .muted   { color: var(--text-muted); font-size: 12px; }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+  </style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div id="login-box">
+    <div class="login-title">Support Chat</div>
+    <div class="login-sub">Enter your credentials to start a session</div>
+    <input type="text" id="login-key" placeholder="X-Shared-Key" />
+    <input type="text" id="login-uid" placeholder="User ID (UUID)"
+           onkeydown="if(event.key==='Enter') doLogin()" style="font-family:monospace;" />
+    <button class="login-btn" onclick="doLogin()">Start Chat</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<div id="config">
+  <label>Server</label>
+  <input type="text" name="server" value="http://127.0.0.1:9090" />
+  <label>Key</label>
+  <input type="text" name="key" placeholder="X-Shared-Key" />
+  <div id="user-chip" style="display:none;"></div>
+  <span style="color:#52525b; font-size:12px; margin-left:4px;">serve via HTTP, not file://</span>
+</div>
+
+<div id="panels">
+
+  <div class="panel" id="user-panel">
+    <div class="panel-header">User</div>
+    <div class="panel-body">
+      <div class="section">
+        <div class="row">
+          <label>Socket</label>
+          <div class="status-dot" id="u-dot"></div>
+          <button class="btn-user" id="u-connect-btn" onclick="userConnect()" disabled>Connect</button>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="chat-area" id="u-chat">
+        <div class="chat-msg system-msg"><div class="cm-text">Logging in…</div></div>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" id="u-message" placeholder="Type a message…" onkeydown="if(event.key==='Enter') userSend()" />
+        <button class="btn-user" id="u-send-btn" onclick="userSend()" disabled>Send</button>
+        <button class="btn-warn" id="u-handoff-btn" onclick="userRequestHandoff()" disabled>Agent</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="laravel-panel">
+    <div class="panel-header">Laravel dispatcher</div>
+    <div class="panel-body">
+      <div class="section">
+        <div class="row">
+          <label></label>
+          <button class="btn-laravel" onclick="laravelRefresh()">Refresh</button>
+          <span class="muted" style="margin-left:8px;">auto on handoff</span>
+        </div>
+      </div>
+      <div id="l-notify" style="display:none; padding:12px; background:var(--color-laravel-bg); border:1px solid rgba(245,158,11,0.2); border-radius:8px; color:#fcd34d; font-size:13px; font-weight:500;"></div>
+      <div class="divider"></div>
+      <div class="section">
+        <div class="row" style="margin-bottom:4px;">
+          <label>Pending</label>
+          <span id="l-handoff-count" class="muted">—</span>
+        </div>
+        <div class="handoff-queue" id="l-handoff-queue">
+          <div class="muted" style="padding:4px 8px;">Refresh to load</div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="section">
+        <div class="row" style="margin-bottom:4px;">
+          <label>Agents</label>
+          <span id="l-agent-count" class="muted">—</span>
+        </div>
+        <div class="agent-list" id="l-agent-list">
+          <div class="muted" style="padding:4px 8px;">Refresh to load</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="agent-panel">
+    <div class="panel-header">Agent</div>
+    <div class="panel-body">
+      <div class="section">
+        <div class="row">
+          <label>Socket</label>
+          <div class="status-dot" id="a-dot"></div>
+          <button class="btn-agent" onclick="agentConnect()">Connect</button>
+          <span id="a-status-label" class="muted">offline</span>
+        </div>
+      </div>
+      <div class="divider"></div>
+
+      <div id="a-incoming">
+        <div class="incoming-label">Incoming handoff</div>
+        <div class="incoming-detail" id="a-incoming-name"></div>
+        <div class="incoming-sub"   id="a-incoming-session"></div>
+        <div style="margin-top:4px;"><button class="btn-agent" id="a-accept-btn" onclick="agentAccept()">Accept Chat</button></div>
+      </div>
+
+      <div id="a-chat-section" style="display:none; flex-direction:column; flex:1; gap:12px; overflow:hidden; min-height:0;">
+        <div class="chat-area" id="a-chat"></div>
+        <div class="chat-input-row">
+          <input type="text" id="a-message" placeholder="Type a reply…" onkeydown="if(event.key==='Enter') agentSend()" />
+          <button class="btn-agent"  onclick="agentSend()">Send</button>
+          <button class="btn-danger" onclick="agentResolve()">Resolve</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ── helpers ─────────────────────────────────────────────────────────────────
+
+  function cfg(name) { return document.querySelector(`#config input[name="${name}"]`).value.trim(); }
+  function ts()      { return new Date().toTimeString().slice(0, 8); }
+
+  function addChat(chatId, cls, label, text, time) {
+    const chat = document.getElementById(chatId);
+    const t = time
+      ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : ts();
+    const msg = document.createElement('div');
+    msg.className = `chat-msg ${cls}`;
+    msg.innerHTML = `<div class="cm-meta">${label} · ${t}</div><div class="cm-text">${esc(text)}</div>`;
+    chat.appendChild(msg);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function sysMsg(chatId, text) {
+    const chat = document.getElementById(chatId);
+    const msg  = document.createElement('div');
+    msg.className = 'chat-msg system-msg';
+    msg.innerHTML = `<div class="cm-text">${text}</div>`;
+    chat.appendChild(msg);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── state ────────────────────────────────────────────────────────────────────
+
+  let clientUserId  = null;   // UUID of the logged-in user
+  let sessionId     = null;
+  let userSocket    = null;
+  let agentSocket   = null;
+  let activeSession = null;   // { sessionId, agentId }
+  let pendingAssign = null;   // { sessionId, agentId, agentName, clientName }
+  let availableAgents = [];
+  let lastHandoffs    = [];
+
+  // ── LOGIN ────────────────────────────────────────────────────────────────────
+
+  function errMsg(text) {
+    const el = document.getElementById('login-err');
+    el.textContent = text;
+    el.style.display = text ? 'block' : 'none';
+  }
+
+  async function doLogin() {
+    const key = document.getElementById('login-key').value.trim();
+    const uid = document.getElementById('login-uid').value.trim();
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!key) { errMsg('API key is required.'); return; }
+    if (!uid || !uuidRe.test(uid)) { errMsg('Enter a valid user UUID.'); return; }
+
+    // Sync key into the config bar so all subsequent calls use it
+    document.querySelector('#config input[name="key"]').value = key;
+    clientUserId = uid;
+    errMsg('');
+
+    try {
+      const res = await fetch(`${cfg('server')}/api/public-chatbot/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Shared-Key': cfg('key') },
+        body: JSON.stringify({ locale: 'ja', client_id: uid }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      sessionId = data.id;
+    } catch (e) {
+      errMsg(`Failed: ${e.message}`);
+      return;
+    }
+
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('user-chip').textContent = uid.slice(0, 8) + '…';
+    document.getElementById('user-chip').style.display = 'block';
+    document.getElementById('u-connect-btn').disabled = false;
+    document.getElementById('u-chat').innerHTML = '';
+    sysMsg('u-chat', 'Session created. Connect to start chatting.');
+  }
+
+  // ── USER ─────────────────────────────────────────────────────────────────────
+
+  function userConnect() {
+    if (!sessionId) return;
+    userSocket = io(cfg('server'), { transports: ['websocket'] });
+
+    userSocket.on('connect', () => {
+      document.getElementById('u-dot').classList.add('connected');
+      userSocket.emit('join_chatbot_session', { session_id: sessionId });
+    });
+
+    userSocket.on('disconnect', () => {
+      document.getElementById('u-dot').classList.remove('connected');
+      document.getElementById('u-send-btn').disabled = true;
+      document.getElementById('u-handoff-btn').disabled = true;
+    });
+
+    userSocket.on('chatbot_session_joined', () => {
+      document.getElementById('u-send-btn').disabled = false;
+      document.getElementById('u-handoff-btn').disabled = false;
+      sysMsg('u-chat', 'Connected. How can we help?');
+    });
+
+    userSocket.on('chatbot_response', (d) => {
+      addChat('u-chat', 'bot', 'Assistant', d.response);
+      if (d.handoff_triggered) showHandoffSuggestion();
+    });
+
+    userSocket.on('handoff_triggered', (d) => {
+      document.getElementById('u-handoff-btn').disabled = true;
+      sysMsg('u-chat', 'Connecting you to an agent…');
+      if (d.client_name) {
+        const n = document.getElementById('l-notify');
+        n.textContent = `${d.client_name} is requesting to talk to an agent.`;
+        n.style.display = 'block';
+      }
+      laravelRefresh();
+    });
+
+    userSocket.on('handoff_accepted', (d) => {
+      sysMsg('u-chat', `${d.agent_name || 'An agent'} has joined the conversation.`);
+    });
+
+    userSocket.on('agent_message_received', (d) => {
+      addChat('u-chat', 'agent-in', d.agent_name || 'Agent', d.message);
+    });
+
+    userSocket.on('handoff_timeout', () => {
+      document.getElementById('u-handoff-btn').disabled = false;
+      sysMsg('u-chat', 'No agent is available right now. Please try again later.');
+    });
+
+    userSocket.on('handoff_resolved', () => {
+      document.getElementById('u-handoff-btn').disabled = false;
+      sysMsg('u-chat', 'Session with agent has ended.');
+    });
+
+    userSocket.on('error', (d) => console.error('user socket error', d));
+  }
+
+  function showHandoffSuggestion() {
+    if (document.getElementById('u-handoff-suggestion')) return; // already showing
+    const chat = document.getElementById('u-chat');
+    const card = document.createElement('div');
+    card.id = 'u-handoff-suggestion';
+    card.className = 'chat-msg bot';
+    card.innerHTML = `
+      <div class="cm-meta">Assistant · ${ts()}</div>
+      <div class="cm-text" style="display:flex;flex-direction:column;gap:12px;">
+        <span>I may not have a complete answer for this. Would you like to speak with a human agent?</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-user" onclick="handoffAccept()" style="padding:6px 14px;font-size:12px;">Yes, connect me</button>
+          <button class="btn-warn" onclick="handoffDecline()" style="padding:6px 14px;font-size:12px;">No thanks</button>
+        </div>
+      </div>`;
+    chat.appendChild(card);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function handoffAccept() {
+    const card = document.getElementById('u-handoff-suggestion');
+    if (card) card.remove();
+    userRequestHandoff();
+  }
+
+  function handoffDecline() {
+    const card = document.getElementById('u-handoff-suggestion');
+    if (card) {
+      card.querySelector('div[style]').innerHTML = '<span style="color:var(--text-muted);font-style:italic;">Declined. Feel free to continue chatting.</span>';
+      setTimeout(() => { if (card.parentNode) card.remove(); }, 3000);
+    }
+  }
+
+  function userSend() {
+    const message = document.getElementById('u-message').value.trim();
+    if (!message || !userSocket || !sessionId) return;
+    const suggestion = document.getElementById('u-handoff-suggestion');
+    if (suggestion) suggestion.remove();
+    userSocket.emit('chatbot_message', { session_id: sessionId, message });
+    addChat('u-chat', 'user-out', 'You', message);
+    document.getElementById('u-message').value = '';
+  }
+
+  function userRequestHandoff() {
+    if (!sessionId || !userSocket) return;
+    userSocket.emit('request_agent_handoff', { session_id: sessionId });
+    document.getElementById('u-handoff-btn').disabled = true;
+  }
+
+  // ── LARAVEL SIMULATOR ────────────────────────────────────────────────────────
+
+  async function laravelRefresh() {
+    await fetchAgents();
+    await fetchHandoffs();
+  }
+
+  async function fetchHandoffs() {
+    try {
+      const res = await fetch(`${cfg('server')}/api/public-chatbot/handoffs?status=new`, {
+        headers: { 'X-Shared-Key': cfg('key') },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      lastHandoffs = data;
+      document.getElementById('l-handoff-count').textContent = `${data.length} pending`;
+      renderHandoffQueue(data);
+    } catch (e) {
+      console.error('fetch handoffs', e);
+    }
+  }
+
+  async function fetchAgents() {
+    try {
+      const res = await fetch(`${cfg('server')}/api/public-chatbot/agents`, {
+        headers: { 'X-Shared-Key': cfg('key') },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      availableAgents = data;
+      document.getElementById('l-agent-count').textContent = `${data.length} available`;
+      renderAgentList(data);
+    } catch (e) {
+      console.error('fetch agents', e);
+    }
+  }
+
+  function renderHandoffQueue(items) {
+    const queue = document.getElementById('l-handoff-queue');
+    queue.innerHTML = '';
+    if (!items.length) {
+      queue.innerHTML = '<div class="muted" style="padding:4px 8px;">No pending handoffs</div>';
+      return;
+    }
+    items.forEach(item => {
+      const card    = document.createElement('div');
+      card.className = 'handoff-card';
+      const name    = item.client_name || null;
+      const short   = item.session_id.slice(0, 8) + '…';
+      const created = new Date(item.created_at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+      const opts    = availableAgents.length
+        ? availableAgents.map(a => `<option value="${a.user_id}">${a.name}</option>`).join('')
+        : '<option value="">No agents</option>';
+      card.innerHTML = `
+        ${name ? `<div class="hc-name">${esc(name)}</div>` : ''}
+        <div class="hc-session">${short}</div>
+        <div class="hc-meta">${created}</div>
+        <div class="hc-row">
+          <select id="sel-${item.session_id}">${opts}</select>
+          <button class="btn-laravel" onclick="assignAgent('${item.session_id}')" ${availableAgents.length?'':'disabled'}>Assign</button>
+        </div>`;
+      queue.appendChild(card);
+    });
+  }
+
+  function renderAgentList(agents) {
+    const list = document.getElementById('l-agent-list');
+    list.innerHTML = '';
+    if (!agents.length) {
+      list.innerHTML = '<div class="muted" style="padding:4px 8px;">No agents available</div>';
+      return;
+    }
+    agents.forEach(a => {
+      const el = document.createElement('div');
+      el.className = 'agent-item';
+      el.textContent = a.name;
+      list.appendChild(el);
+    });
+  }
+
+  function assignAgent(sid) {
+    const agentId   = document.getElementById(`sel-${sid}`).value;
+    if (!agentId) return;
+    const agent     = availableAgents.find(a => a.user_id === agentId);
+    const agentName = agent ? agent.name : agentId.slice(0,8) + '…';
+    const handoff   = lastHandoffs.find(h => h.session_id === sid);
+    const cName     = (handoff && handoff.client_name) || sid.slice(0,8) + '…';
+
+    pendingAssign = { sessionId: sid, agentId, agentName, clientName: cName };
+
+    document.getElementById('l-notify').style.display = 'none';
+    document.getElementById('a-incoming-name').textContent    = cName;
+    document.getElementById('a-incoming-session').textContent = `Session ${sid.slice(0,8)}…`;
+    document.getElementById('a-incoming').classList.add('visible');
+    document.getElementById('a-status-label').textContent = 'incoming…';
+
+    if (!agentSocket || !agentSocket.connected) agentConnect();
+  }
+
+  // ── AGENT ────────────────────────────────────────────────────────────────────
+
+  function agentConnect() {
+    if (agentSocket && agentSocket.connected) return;
+
+    agentSocket = io(cfg('server'), { transports: ['websocket'] });
+
+    agentSocket.on('connect', () => {
+      document.getElementById('a-dot').classList.add('connected');
+      document.getElementById('a-status-label').textContent = pendingAssign ? 'incoming…' : 'waiting…';
+    });
+
+    agentSocket.on('disconnect', () => {
+      document.getElementById('a-dot').classList.remove('connected');
+      document.getElementById('a-status-label').textContent = 'offline';
+    });
+
+    agentSocket.on('handoff_joined', (d) => {
+      activeSession = { sessionId: d.session_id, agentId: d.agent_id };
+      pendingAssign = null;
+
+      document.getElementById('a-incoming').classList.remove('visible');
+      document.getElementById('a-accept-btn').disabled = false;
+      document.getElementById('a-chat').innerHTML = '';
+      document.getElementById('a-chat-section').style.display = 'flex';
+      document.getElementById('a-status-label').textContent = 'active';
+
+      if (!d.history.length) {
+        sysMsg('a-chat', 'No previous messages.');
+      } else {
+        sysMsg('a-chat', `— ${d.history.length} previous messages —`);
+        d.history.forEach(m => {
+          const cls   = m.role === 'client' ? 'client' : m.role === 'agent' ? 'agent' : 'assistant';
+          const label = m.role === 'client' ? 'User' : m.role === 'agent' ? 'Agent' : 'Bot';
+          addChat('a-chat', cls, label, m.content, m.timestamp);
+        });
+        sysMsg('a-chat', '— live session —');
+      }
+    });
+
+    agentSocket.on('handoff_accepted', () => {});
+
+    agentSocket.on('user_message_received', (d) => {
+      addChat('a-chat', 'client', pendingAssign?.clientName || 'User', d.message);
+    });
+
+    agentSocket.on('agent_message_received', () => { /* shown optimistically */ });
+
+    agentSocket.on('handoff_resolved', () => {
+      activeSession = null;
+      document.getElementById('a-chat-section').style.display = 'none';
+      document.getElementById('a-status-label').textContent = 'waiting…';
+    });
+
+    agentSocket.on('error', (d) => console.error('agent socket error', d));
+  }
+
+  function agentAccept() {
+    if (!pendingAssign || !agentSocket) return;
+    const { sessionId, agentId } = pendingAssign;
+    agentSocket.emit('join_handoff_session', { session_id: sessionId, agent_id: agentId, shared_key: cfg('key') });
+    document.getElementById('a-accept-btn').disabled = true;
+  }
+
+  function agentSend() {
+    if (!agentSocket || !activeSession) return;
+    const message = document.getElementById('a-message').value.trim();
+    if (!message) return;
+    const { sessionId, agentId } = activeSession;
+    agentSocket.emit('agent_message', { session_id: sessionId, agent_id: agentId, message });
+    addChat('a-chat', 'agent', 'You', message);
+    document.getElementById('a-message').value = '';
+  }
+
+  function agentResolve() {
+    if (!agentSocket || !activeSession) return;
+    agentSocket.emit('resolve_handoff', { session_id: activeSession.sessionId });
+  }
+</script>
+
+</body>
+</html>
