@@ -230,7 +230,8 @@
     <div class="login-title">Support Chat</div>
     <div class="login-sub">Enter your credentials to start a session</div>
     <input type="text" id="login-server" placeholder="Server URL" />
-    <input type="text" id="login-key" placeholder="X-Shared-Key" />
+    <input type="text" id="login-key" placeholder="X-Shared-Key (HTTP API)" />
+    <input type="text" id="login-agent-key" placeholder="Agent WS Key (AGENT_WS_SHARED_KEY)" />
     <input type="text" id="login-uid" placeholder="User ID (UUID)" value="e024b48c-f061-47b5-ba42-c4bb1a859ea6"
            onkeydown="if(event.key==='Enter') doLogin()" style="font-family:monospace;" />
     <button class="login-btn" onclick="doLogin()">Start Chat</button>
@@ -243,6 +244,7 @@
   <input type="text" name="server" placeholder="Server URL" />
   <label>Key</label>
   <input type="text" name="key" placeholder="X-Shared-Key" />
+  <input type="text" name="agent-key" placeholder="Agent WS Key" style="display:none" />
   <div id="user-chip" style="display:none;"></div>
   <span style="color:#52525b; font-size:12px; margin-left:4px;">serve via HTTP, not file://</span>
 </div>
@@ -390,17 +392,20 @@
   }
 
   async function doLogin() {
-    const server = document.getElementById('login-server').value.trim();
-    const key    = document.getElementById('login-key').value.trim();
-    const uid    = document.getElementById('login-uid').value.trim();
-    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const server   = document.getElementById('login-server').value.trim();
+    const key      = document.getElementById('login-key').value.trim();
+    const agentKey = document.getElementById('login-agent-key').value.trim();
+    const uid      = document.getElementById('login-uid').value.trim();
+    const uuidRe   = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!server) { errMsg('Server URL is required.'); return; }
     if (!key) { errMsg('API key is required.'); return; }
+    if (!agentKey) { errMsg('Agent WS key is required.'); return; }
     if (!uid || !uuidRe.test(uid)) { errMsg('Enter a valid user UUID.'); return; }
 
     // Sync into the config bar so all subsequent calls use these values
     document.querySelector('#config input[name="server"]').value = server;
     document.querySelector('#config input[name="key"]').value = key;
+    document.querySelector('#config input[name="agent-key"]').value = agentKey;
     clientUserId = uid;
     errMsg('');
 
@@ -694,7 +699,7 @@
   function agentAccept() {
     if (!pendingAssign || !agentSocket) return;
     const { sessionId, agentId } = pendingAssign;
-    agentSocket.emit('join_handoff_session', { session_id: sessionId, agent_id: agentId, shared_key: cfg('key') });
+    agentSocket.emit('join_handoff_session', { session_id: sessionId, agent_id: agentId, shared_key: cfg('agent-key') });
     document.getElementById('a-accept-btn').disabled = true;
   }
 
