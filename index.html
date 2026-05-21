@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Handoff Test Client</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -221,6 +222,74 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+    /* ── voice section ── */
+    #voice-section {
+      display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
+      padding-top: 12px; border-top: 1px solid var(--border-color);
+    }
+    .voice-row { display: flex; align-items: center; gap: 10px; }
+    #mic-btn {
+      width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+      background: var(--bg-input); border: 1px solid var(--border-focus);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all 0.2s ease; touch-action: none; user-select: none;
+    }
+    #mic-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    #mic-btn.active { background: var(--color-danger); border-color: var(--color-danger); transform: scale(1.1); }
+    #mic-btn svg { width: 20px; height: 20px; color: var(--text-main); }
+    #voice-status { font-size: 12px; color: var(--text-muted); }
+
+    /* ── summary card ── */
+    .summary-card {
+      padding: 14px; background: var(--bg-base);
+      border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 10px;
+      display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
+      animation: fadeIn 0.3s ease;
+    }
+    .summary-card-header {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;
+    }
+    .summary-card-title { font-size: 11px; font-weight: 700; color: var(--color-agent); text-transform: uppercase; letter-spacing: 0.05em; }
+    .summary-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+    }
+    .badge-positive  { background: rgba(16,185,129,0.15); color: #10b981; }
+    .badge-neutral   { background: rgba(245,158,11,0.15);  color: #f59e0b; }
+    .badge-negative  { background: rgba(239,68,68,0.15);   color: #ef4444; }
+    .badge-topic     { background: rgba(99,102,241,0.15);  color: #818cf8; }
+    .summary-text    { font-size: 13px; color: var(--text-main); line-height: 1.55; }
+    .summary-text-ja { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
+
+    /* ── streaming cursor ── */
+    .stream-cursor {
+      display: inline-block; width: 2px; height: 0.9em;
+      background: currentColor; margin-left: 2px; vertical-align: text-bottom;
+      animation: blink 0.9s step-end infinite;
+    }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* ── citations ── */
+    .citations { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .citation-link {
+      font-size: 11px; padding: 2px 8px; border-radius: 10px;
+      background: rgba(99,102,241,0.12); color: #818cf8;
+      text-decoration: none; border: 1px solid rgba(99,102,241,0.2);
+      transition: background 0.15s;
+    }
+    a.citation-link:hover { background: rgba(99,102,241,0.22); }
+
+    /* ── confidence badge ── */
+    .conf-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .conf-badge {
+      font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 8px;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .conf-high   { background: rgba(16,185,129,0.15); color: #10b981; }
+    .conf-medium { background: rgba(245,158,11,0.15);  color: #f59e0b; }
+    .conf-low    { background: rgba(239,68,68,0.15);   color: #ef4444; }
+    .conf-score  { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body>
@@ -270,6 +339,20 @@
         <button class="btn-user" id="u-send-btn" onclick="userSend()" disabled>Send</button>
         <button class="btn-warn" id="u-handoff-btn" onclick="userRequestHandoff()" disabled>Agent</button>
       </div>
+
+      <div id="voice-section">
+        <div class="voice-row">
+          <button id="mic-btn" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 10a7 7 0 01-14 0M12 19v4m-4 0h8" />
+            </svg>
+          </button>
+          <span id="voice-status">hold to speak</span>
+          <button class="btn-danger" id="voice-disconnect-btn" onclick="voiceDisconnect()" style="display:none; margin-left:auto;">End Voice</button>
+        </div>
+        <audio id="agent-audio" autoplay playsinline style="display:none;"></audio>
+      </div>
     </div>
   </div>
 
@@ -284,6 +367,14 @@
         </div>
       </div>
       <div id="l-notify" style="display:none; padding:12px; background:var(--color-laravel-bg); border:1px solid rgba(245,158,11,0.2); border-radius:8px; color:#fcd34d; font-size:13px; font-weight:500;"></div>
+      <div id="l-summary" style="display:none;" class="summary-card">
+        <div class="summary-card-header">
+          <span class="summary-card-title">Session Summary</span>
+          <div class="summary-badges" id="l-summary-badges"></div>
+        </div>
+        <div class="summary-text"    id="l-summary-en"></div>
+        <div class="summary-text-ja" id="l-summary-ja"></div>
+      </div>
       <div class="divider"></div>
       <div class="section">
         <div class="row" style="margin-bottom:4px;">
@@ -314,7 +405,6 @@
         <div class="row">
           <label>Socket</label>
           <div class="status-dot" id="a-dot"></div>
-          <button class="btn-agent" onclick="agentConnect()">Connect</button>
           <span id="a-status-label" class="muted">offline</span>
         </div>
       </div>
@@ -324,6 +414,8 @@
         <div class="incoming-label">Incoming handoff</div>
         <div class="incoming-detail" id="a-incoming-name"></div>
         <div class="incoming-sub"   id="a-incoming-session"></div>
+        <div id="a-summary-badges" class="summary-badges" style="margin-top:4px;"></div>
+        <div id="a-summary-text"   class="summary-text-ja" style="display:none;"></div>
         <div style="margin-top:4px;"><button class="btn-agent" id="a-accept-btn" onclick="agentAccept()">Accept Chat</button></div>
       </div>
 
@@ -374,14 +466,15 @@
 
   // ── state ────────────────────────────────────────────────────────────────────
 
-  let clientUserId  = null;   // UUID of the logged-in user
-  let sessionId     = null;
-  let userSocket    = null;
-  let agentSocket   = null;
-  let activeSession = null;   // { sessionId, agentId }
-  let pendingAssign = null;   // { sessionId, agentId, agentName, clientName }
+  let clientUserId    = null;   // UUID of the logged-in user
+  let sessionId       = null;
+  let userSocket      = null;
+  let agentSocket     = null;
+  let activeSession   = null;   // { sessionId, agentId }
+  let pendingAssign   = null;   // { sessionId, agentId, agentName, clientName }
   let availableAgents = [];
   let lastHandoffs    = [];
+  let streamingBubble = null;   // in-progress streaming message element
 
   // ── LOGIN ────────────────────────────────────────────────────────────────────
 
@@ -426,26 +519,47 @@
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('user-chip').textContent = uid.slice(0, 8) + '…';
     document.getElementById('user-chip').style.display = 'block';
-    document.getElementById('u-connect-btn').disabled = false;
     document.getElementById('u-chat').innerHTML = '';
-    sysMsg('u-chat', 'Session created. Connect to start chatting.');
+
+    userConnect();
+
+    _voiceEnsureConnected()
+      .then(() => { document.getElementById('mic-btn').disabled = false; })
+      .catch(e => {
+        setVoiceStatus(`voice unavailable: ${e.message}`);
+        console.error('Voice auto-connect failed', e);
+      });
   }
 
   // ── USER ─────────────────────────────────────────────────────────────────────
 
   function userConnect() {
-    if (!sessionId) return;
+    if (!sessionId || userSocket) return;
+    const btn = document.getElementById('u-connect-btn');
+    btn.disabled = true;
+    btn.textContent = 'Connecting…';
+
     userSocket = io(cfg('server'), { transports: ['websocket'] });
 
     userSocket.on('connect', () => {
       document.getElementById('u-dot').classList.add('connected');
+      btn.textContent = 'Connected';
+      btn.style.background = 'var(--color-user-bg)';
+      btn.style.color = '#a7f3d0';
+      btn.style.border = '1px solid rgba(16,185,129,0.3)';
       userSocket.emit('join_chatbot_session', { session_id: sessionId });
     });
 
     userSocket.on('disconnect', () => {
       document.getElementById('u-dot').classList.remove('connected');
+      btn.textContent = 'Connect';
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.style.border = '';
+      btn.disabled = false;
       document.getElementById('u-send-btn').disabled = true;
       document.getElementById('u-handoff-btn').disabled = true;
+      streamingBubble = null;
     });
 
     userSocket.on('chatbot_session_joined', () => {
@@ -454,8 +568,58 @@
       sysMsg('u-chat', 'Connected. How can we help?');
     });
 
+    userSocket.on('chatbot_token', (d) => {
+      if (voiceTurnInProgress) return;
+      const chat = document.getElementById('u-chat');
+      if (!streamingBubble) {
+        streamingBubble = document.createElement('div');
+        streamingBubble.className = 'chat-msg bot';
+        streamingBubble.innerHTML =
+          `<div class="cm-meta">Assistant · ${ts()}</div>` +
+          `<div class="cm-text"><span class="stream-text"></span><span class="stream-cursor"></span></div>`;
+        chat.appendChild(streamingBubble);
+      }
+      streamingBubble.querySelector('.stream-text').textContent += d.token;
+      chat.scrollTop = chat.scrollHeight;
+    });
+
     userSocket.on('chatbot_response', (d) => {
-      addChat('u-chat', 'bot', 'Assistant', d.response);
+      if (voiceTurnInProgress) { voiceTurnInProgress = false; return; }
+      const chat = document.getElementById('u-chat');
+      let cmText;
+      if (streamingBubble) {
+        cmText = streamingBubble.querySelector('.cm-text');
+        cmText.innerHTML = esc(d.response);
+        streamingBubble = null;
+      } else {
+        const msg = document.createElement('div');
+        msg.className = 'chat-msg bot';
+        msg.innerHTML =
+          `<div class="cm-meta">Assistant · ${ts()}</div>` +
+          `<div class="cm-text">${esc(d.response)}</div>`;
+        chat.appendChild(msg);
+        cmText = msg.querySelector('.cm-text');
+      }
+      if (d.confidence_tier) {
+        const tier = d.confidence_tier.toLowerCase();
+        const pct  = d.confidence_score != null ? `${Math.round(d.confidence_score * 100)}%` : '';
+        const row  = document.createElement('div');
+        row.className = 'conf-row';
+        row.innerHTML =
+          `<span class="conf-badge conf-${tier}">${tier}</span>` +
+          (pct ? `<span class="conf-score">${pct}</span>` : '');
+        cmText.appendChild(row);
+      }
+      if (d.citations && d.citations.length) {
+        const citEl = document.createElement('div');
+        citEl.className = 'citations';
+        citEl.innerHTML = d.citations.map(c => c.source_url
+          ? `<a href="${esc(c.source_url)}" target="_blank" class="citation-link">${esc(c.source_label)}</a>`
+          : `<span class="citation-link">${esc(c.source_label)}</span>`
+        ).join('');
+        cmText.appendChild(citEl);
+      }
+      chat.scrollTop = chat.scrollHeight;
       if (d.handoff_triggered) showHandoffSuggestion();
     });
 
@@ -468,6 +632,7 @@
         n.style.display = 'block';
       }
       laravelRefresh();
+      fetchSessionSummary(sessionId).then(renderLaravelSummary);
     });
 
     userSocket.on('handoff_accepted', (d) => {
@@ -529,6 +694,8 @@
     if (!message || !userSocket || !sessionId) return;
     const suggestion = document.getElementById('u-handoff-suggestion');
     if (suggestion) suggestion.remove();
+    voiceTurnInProgress = false;
+    streamingBubble = null;
     userSocket.emit('chatbot_message', { session_id: sessionId, message });
     addChat('u-chat', 'user-out', 'You', message);
     document.getElementById('u-message').value = '';
@@ -538,6 +705,49 @@
     if (!sessionId || !userSocket) return;
     userSocket.emit('request_agent_handoff', { session_id: sessionId });
     document.getElementById('u-handoff-btn').disabled = true;
+  }
+
+  // ── SUMMARY ──────────────────────────────────────────────────────────────────
+
+  async function fetchSessionSummary(sid) {
+    try {
+      const res = await fetch(`${cfg('server')}/api/public-chatbot/sessions/${sid}/summary`, {
+        headers: { 'X-Shared-Key': cfg('key') },
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch(e) {
+      console.error('fetch summary', e);
+      return null;
+    }
+  }
+
+  function sentimentBadgeClass(sentiment) {
+    if (sentiment === 'positive') return 'badge-positive';
+    if (sentiment === 'negative') return 'badge-negative';
+    return 'badge-neutral';
+  }
+
+  function renderLaravelSummary(data) {
+    if (!data) return;
+    document.getElementById('l-summary-en').textContent = data.summary || '—';
+    document.getElementById('l-summary-ja').textContent = data.summary_ja || '';
+    document.getElementById('l-summary-badges').innerHTML = `
+      <span class="badge ${sentimentBadgeClass(data.sentiment)}">${data.sentiment || '—'}</span>
+      <span class="badge badge-topic">${data.topic || '—'}</span>`;
+    document.getElementById('l-summary').style.display = 'block';
+  }
+
+  function renderAgentSummary(data) {
+    if (!data) return;
+    const text = document.getElementById('a-summary-text');
+    const badges = document.getElementById('a-summary-badges');
+    text.textContent = data.summary_ja || data.summary || '';
+    text.style.display = text.textContent ? 'block' : 'none';
+    badges.innerHTML = data.topic
+      ? `<span class="badge badge-topic">${data.topic}</span>
+         <span class="badge ${sentimentBadgeClass(data.sentiment)}">${data.sentiment}</span>`
+      : '';
   }
 
   // ── LARAVEL SIMULATOR ────────────────────────────────────────────────────────
@@ -633,10 +843,11 @@
     document.getElementById('l-notify').style.display = 'none';
     document.getElementById('a-incoming-name').textContent    = cName;
     document.getElementById('a-incoming-session').textContent = `Session ${sid.slice(0,8)}…`;
+    document.getElementById('a-summary-text').style.display = 'none';
+    document.getElementById('a-summary-badges').innerHTML = '';
+    fetchSessionSummary(sid).then(renderAgentSummary);
     document.getElementById('a-incoming').classList.add('visible');
     document.getElementById('a-status-label').textContent = 'incoming…';
-
-    if (!agentSocket || !agentSocket.connected) agentConnect();
   }
 
   // ── AGENT ────────────────────────────────────────────────────────────────────
@@ -697,10 +908,20 @@
   }
 
   function agentAccept() {
-    if (!pendingAssign || !agentSocket) return;
-    const { sessionId, agentId } = pendingAssign;
-    agentSocket.emit('join_handoff_session', { session_id: sessionId, agent_id: agentId, shared_key: cfg('agent-key') });
+    if (!pendingAssign) return;
     document.getElementById('a-accept-btn').disabled = true;
+    const { sessionId: sid, agentId } = pendingAssign;
+
+    const doJoin = () => {
+      agentSocket.emit('join_handoff_session', { session_id: sid, agent_id: agentId, shared_key: cfg('agent-key') });
+    };
+
+    if (agentSocket && agentSocket.connected) {
+      doJoin();
+    } else {
+      agentConnect();
+      agentSocket.once('connect', doJoin);
+    }
   }
 
   function agentSend() {
@@ -717,6 +938,219 @@
     if (!agentSocket || !activeSession) return;
     agentSocket.emit('resolve_handoff', { session_id: activeSession.sessionId });
   }
+
+  // ── VOICE (LiveKit) ──────────────────────────────────────────────────────────
+
+  let voiceRoom       = null;
+  let voiceLocalTrack = null;
+  let voiceMicActive  = false;
+  let voiceRefreshTimer = null;
+  let voiceSignalParams = null;
+  let voiceAgentIdentity = null;
+  let voiceAgentBubble   = null;
+  let voiceAgentBuffer   = '';
+  let voiceTurnInProgress = false;
+
+  function setVoiceStatus(text) {
+    document.getElementById('voice-status').textContent = text;
+  }
+
+  function handleVoiceDataMessage(payload) {
+    let msg;
+    try { msg = JSON.parse(new TextDecoder().decode(payload)); } catch { return; }
+    switch (msg.type) {
+      case 'user_transcript':
+        addChat('u-chat', 'user-out', 'You (voice)', msg.text);
+        voiceAgentBubble = null; voiceAgentBuffer = '';
+        voiceTurnInProgress = true;
+        break;
+      case 'agent_text': {
+        const chat = document.getElementById('u-chat');
+        if (!voiceAgentBubble) {
+          voiceAgentBubble = document.createElement('div');
+          voiceAgentBubble.className = 'chat-msg bot';
+          voiceAgentBubble.innerHTML =
+            `<div class="cm-meta">Assistant (voice) · ${ts()}</div>` +
+            `<div class="cm-text"></div>`;
+          chat.appendChild(voiceAgentBubble);
+          voiceAgentBuffer = '';
+        }
+        if (msg.final) {
+          if (msg.text) voiceAgentBuffer = msg.text;
+          voiceAgentBubble.querySelector('.cm-text').textContent = voiceAgentBuffer;
+          voiceAgentBubble = null; voiceAgentBuffer = '';
+        } else {
+          voiceAgentBuffer += msg.text;
+          voiceAgentBubble.querySelector('.cm-text').textContent = voiceAgentBuffer;
+        }
+        chat.scrollTop = chat.scrollHeight;
+        break;
+      }
+      case 'chatbot_response': {
+        const chat = document.getElementById('u-chat');
+        const bubbles = chat.querySelectorAll('.chat-msg.bot .cm-text');
+        const cmText = bubbles.length ? bubbles[bubbles.length - 1] : null;
+        if (cmText && !msg.is_casual) {
+          if (msg.confidence_tier) {
+            const tier = msg.confidence_tier.toLowerCase();
+            const pct  = msg.confidence_score != null ? `${Math.round(msg.confidence_score * 100)}%` : '';
+            const row  = document.createElement('div');
+            row.className = 'conf-row';
+            row.innerHTML =
+              `<span class="conf-badge conf-${tier}">${tier}</span>` +
+              (pct ? `<span class="conf-score">${pct}</span>` : '');
+            cmText.appendChild(row);
+          }
+          if (msg.citations && msg.citations.length) {
+            const citEl = document.createElement('div');
+            citEl.className = 'citations';
+            citEl.innerHTML = msg.citations.map(c => c.source_url
+              ? `<a href="${esc(c.source_url)}" target="_blank" class="citation-link">${esc(c.source_label)}</a>`
+              : `<span class="citation-link">${esc(c.source_label)}</span>`
+            ).join('');
+            cmText.appendChild(citEl);
+          }
+        }
+        if (msg.handoff_triggered) showHandoffSuggestion();
+        // voiceTurnInProgress stays true — the Socket.IO chatbot_response handler clears it
+        break;
+      }
+      case 'error':
+        addChat('u-chat', 'bot', 'Voice error', msg.data?.message || 'Unknown error');
+        break;
+    }
+  }
+
+  function scheduleVoiceRefresh(ttl) {
+    clearTimeout(voiceRefreshTimer);
+    const delay = Math.max((ttl - 30) * 1000, 5000);
+    voiceRefreshTimer = setTimeout(async () => {
+      if (!voiceSignalParams || !voiceRoom) return;
+      try {
+        const res = await fetch(voiceSignalParams.refreshUrl, {
+          method: 'POST',
+          headers: voiceSignalParams.headers,
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        await voiceRoom.refreshToken?.(data.access_token);
+        scheduleVoiceRefresh(data.token_ttl_seconds);
+      } catch (e) {
+        console.warn('Voice token refresh failed', e);
+      }
+    }, delay);
+  }
+
+  async function _voiceEnsureConnected() {
+    if (voiceRoom && voiceRoom.state === LivekitClient.ConnectionState.Connected) return;
+
+    const headers = { 'X-Shared-Key': cfg('key'), 'Content-Type': 'application/json' };
+    voiceSignalParams = {
+      url: `${cfg('server')}/api/rtc/signal`,
+      refreshUrl: `${cfg('server')}/api/rtc/refresh`,
+      headers,
+    };
+
+    const res = await fetch(voiceSignalParams.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    const signalData = await res.json();
+
+    voiceRoom = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+
+    voiceRoom.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
+      if (participant) {
+        if (!voiceAgentIdentity) voiceAgentIdentity = participant.identity;
+        else if (participant.identity !== voiceAgentIdentity) return;
+      }
+      handleVoiceDataMessage(payload);
+    });
+
+    voiceRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === LivekitClient.Track.Kind.Audio) {
+        track.attach(document.getElementById('agent-audio'));
+      }
+    });
+
+    voiceRoom.on(LivekitClient.RoomEvent.Disconnected, () => {
+      setVoiceStatus('disconnected');
+      _voiceCleanupUI();
+    });
+
+    voiceRoom.on(LivekitClient.RoomEvent.Reconnecting, () => setVoiceStatus('reconnecting…'));
+    voiceRoom.on(LivekitClient.RoomEvent.Reconnected,  () => setVoiceStatus('hold to speak'));
+
+    await voiceRoom.connect(signalData.livekit_url, signalData.access_token);
+    document.getElementById('voice-disconnect-btn').style.display = '';
+    scheduleVoiceRefresh(signalData.token_ttl_seconds);
+    sysMsg('u-chat', 'Voice connected.');
+  }
+
+  async function voiceStartMic() {
+    if (voiceMicActive || !voiceRoom) return;
+    document.getElementById('mic-btn').classList.add('active');
+    try {
+      voiceLocalTrack = await LivekitClient.createLocalAudioTrack({
+        echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+      });
+      await voiceRoom.localParticipant.publishTrack(voiceLocalTrack);
+      voiceMicActive = true;
+      setVoiceStatus('listening…');
+    } catch (e) {
+      console.error('Mic start error', e);
+      document.getElementById('mic-btn').classList.remove('active');
+      voiceLocalTrack = null; voiceMicActive = false;
+      setVoiceStatus('hold to speak');
+    }
+  }
+
+  async function voiceStopMic() {
+    if (!voiceLocalTrack || !voiceRoom || !voiceMicActive) return;
+    const track = voiceLocalTrack;
+    voiceLocalTrack = null; voiceMicActive = false;
+    document.getElementById('mic-btn').classList.remove('active');
+    setVoiceStatus('hold to speak');
+    try {
+      await voiceRoom.localParticipant.unpublishTrack(track);
+      track.stop();
+    } catch (e) {
+      console.error('Mic stop error', e);
+    }
+  }
+
+  async function voiceDisconnect() {
+    clearTimeout(voiceRefreshTimer);
+    if (voiceLocalTrack) { voiceLocalTrack.stop(); voiceLocalTrack = null; }
+    voiceMicActive = false;
+    if (voiceRoom) { await voiceRoom.disconnect(); voiceRoom = null; }
+    voiceAgentIdentity = null; voiceSignalParams = null;
+    _voiceCleanupUI();
+    sysMsg('u-chat', 'Voice disconnected.');
+  }
+
+  function _voiceCleanupUI() {
+    clearTimeout(voiceRefreshTimer);
+    document.getElementById('voice-disconnect-btn').style.display = 'none';
+    document.getElementById('mic-btn').disabled = !sessionId;
+    document.getElementById('mic-btn').classList.remove('active');
+    setVoiceStatus(sessionId ? 'hold to speak' : 'not connected');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const micBtn = document.getElementById('mic-btn');
+    micBtn.addEventListener('mousedown',  (e) => { e.preventDefault(); voiceStartMic(); });
+    window.addEventListener('mouseup',    ()  => { if (voiceMicActive) voiceStopMic(); });
+    micBtn.addEventListener('touchstart', (e) => { e.preventDefault(); voiceStartMic(); }, { passive: false });
+    window.addEventListener('touchend',   ()  => { if (voiceMicActive) voiceStopMic(); });
+    window.addEventListener('touchcancel',()  => { if (voiceMicActive) voiceStopMic(); });
+  });
 </script>
 
 </body>
