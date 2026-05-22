@@ -951,6 +951,10 @@
   let voiceAgentBuffer   = '';
   let voiceTurnInProgress = false;
 
+  function finishVoiceTurn() {
+    voiceTurnInProgress = false;
+  }
+
   function setVoiceStatus(text) {
     document.getElementById('voice-status').textContent = text;
   }
@@ -1012,10 +1016,11 @@
           }
         }
         if (msg.handoff_triggered) showHandoffSuggestion();
-        // voiceTurnInProgress stays true — the Socket.IO chatbot_response handler clears it
+        finishVoiceTurn();
         break;
       }
       case 'error':
+        finishVoiceTurn();
         addChat('u-chat', 'bot', 'Voice error', msg.data?.message || 'Unknown error');
         break;
     }
@@ -1081,6 +1086,7 @@
 
     voiceRoom.on(LivekitClient.RoomEvent.Disconnected, () => {
       setVoiceStatus('disconnected');
+      finishVoiceTurn();
       _voiceCleanupUI();
     });
 
@@ -1130,6 +1136,7 @@
     if (voiceLocalTrack) { voiceLocalTrack.stop(); voiceLocalTrack = null; }
     voiceMicActive = false;
     if (voiceRoom) { await voiceRoom.disconnect(); voiceRoom = null; }
+    finishVoiceTurn();
     voiceAgentIdentity = null; voiceSignalParams = null;
     _voiceCleanupUI();
     sysMsg('u-chat', 'Voice disconnected.');
