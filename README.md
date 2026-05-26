@@ -1,12 +1,44 @@
 # Human Handoff Integration
 
+## Session bootstrap (Frontend / Laravel → FastAPI)
+
+Before any Socket.IO, handoff, or RTC call, create the chatbot session through FastAPI.
+
+```
+POST /api/subsidy-chatbot/session
+X-Shared-Key: {shared_key}
+
+{
+  "chatbot_id": "uuid",   // required: chat_bots.id
+  "client_id": "uuid"     // optional: users.id
+}
+```
+
+Response:
+
+```
+{
+  "id": "uuid",           // session_id used everywhere else
+  "chatbot_id": "uuid",
+  "status": "active",
+  "ended_at": null,
+  "started_at": "iso8601",
+  "last_activity_at": "iso8601"
+}
+```
+
+Important:
+- `chatbot_id` is required only when creating the session
+- after the session exists, all later FastAPI routes, Socket.IO events, LiveKit/RTC calls, and Laravel webhooks continue using `session_id`
+- FastAPI resolves `chatbot_id` and `organization_id` from `chatbot_sessions`, so Laravel does not need to resend them on handoff or agent events
+
 ## Part 1: Outgoing Webhooks (FastAPI → Laravel)
 
 FastAPI POSTs to `LARAVEL_WEBHOOK_URL` with header `X-Shared-Key`. These are fire-and-forget notifications — FastAPI does not wait for a response. Laravel should use them to update its own state and drive agent assignment.
 
 ### Handoff Requested
 
-Fired immediately when a user emits `request_agent_handoff`. Laravel should use `session_id` to look up the session, identify the user, and assign an available agent. Once an agent is assigned, Laravel should instruct the agent app to call `join_handoff_session` via Socket.IO (see Part 2).
+Fired immediately when a user emits `request_agent_handoff`. Laravel should use `session_id` to look up the session, identify the user, and resolve the linked chatbot/org if needed. Once an agent is assigned, Laravel should instruct the agent app to call `join_handoff_session` via Socket.IO (see Part 2).
 
 ```
 POST {LARAVEL_WEBHOOK_URL}

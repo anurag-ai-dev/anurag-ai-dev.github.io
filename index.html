@@ -297,10 +297,12 @@
 <div id="login-screen">
   <div id="login-box">
     <div class="login-title">Support Chat</div>
-    <div class="login-sub">Enter your credentials to start a session</div>
-    <input type="text" id="login-server" placeholder="Server URL" />
-    <input type="text" id="login-key" placeholder="X-Shared-Key (HTTP API)" />
-    <input type="text" id="login-agent-key" placeholder="Agent WS Key (AGENT_WS_SHARED_KEY)" />
+    <div class="login-sub">Enter your credentials to start a subsidy chatbot session</div>
+    <input type="text" id="login-server" placeholder="Server URL" value="http://localhost:9090" />
+    <input type="text" id="login-key" placeholder="X-Shared-Key (HTTP API)" value="test" />
+    <input type="text" id="login-agent-key" placeholder="Agent WS Key (AGENT_WS_SHARED_KEY)" value="test" />
+    <input type="text" id="login-chatbot-id" placeholder="Chatbot ID (UUID)"
+           onkeydown="if(event.key==='Enter') doLogin()" style="font-family:monospace;" />
     <input type="text" id="login-uid" placeholder="User ID (UUID)" value="e024b48c-f061-47b5-ba42-c4bb1a859ea6"
            onkeydown="if(event.key==='Enter') doLogin()" style="font-family:monospace;" />
     <button class="login-btn" onclick="doLogin()">Start Chat</button>
@@ -310,10 +312,10 @@
 
 <div id="config">
   <label>Server</label>
-  <input type="text" name="server" placeholder="Server URL" />
+  <input type="text" name="server" placeholder="Server URL" value="http://localhost:9090" />
   <label>Key</label>
-  <input type="text" name="key" placeholder="X-Shared-Key" />
-  <input type="text" name="agent-key" placeholder="Agent WS Key" style="display:none" />
+  <input type="text" name="key" placeholder="X-Shared-Key" value="test" />
+  <input type="text" name="agent-key" placeholder="Agent WS Key" value="fake-agent-key" style="display:none" />
   <div id="user-chip" style="display:none;"></div>
   <span style="color:#52525b; font-size:12px; margin-left:4px;">serve via HTTP, not file://</span>
 </div>
@@ -488,11 +490,13 @@
     const server   = document.getElementById('login-server').value.trim();
     const key      = document.getElementById('login-key').value.trim();
     const agentKey = document.getElementById('login-agent-key').value.trim();
-    const uid      = document.getElementById('login-uid').value.trim();
+    const chatbotId = document.getElementById('login-chatbot-id').value.trim();
+    const uid       = document.getElementById('login-uid').value.trim();
     const uuidRe   = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!server) { errMsg('Server URL is required.'); return; }
     if (!key) { errMsg('API key is required.'); return; }
     if (!agentKey) { errMsg('Agent WS key is required.'); return; }
+    if (!chatbotId || !uuidRe.test(chatbotId)) { errMsg('Enter a valid chatbot UUID.'); return; }
     if (!uid || !uuidRe.test(uid)) { errMsg('Enter a valid user UUID.'); return; }
 
     // Sync into the config bar so all subsequent calls use these values
@@ -503,10 +507,10 @@
     errMsg('');
 
     try {
-      const res = await fetch(`${cfg('server')}/api/public-chatbot/session`, {
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Shared-Key': cfg('key') },
-        body: JSON.stringify({ locale: 'ja', client_id: uid }),
+        body: JSON.stringify({ chatbot_id: chatbotId, client_id: uid }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || res.statusText);
@@ -711,7 +715,7 @@
 
   async function fetchSessionSummary(sid) {
     try {
-      const res = await fetch(`${cfg('server')}/api/public-chatbot/sessions/${sid}/summary`, {
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/sessions/${sid}/summary`, {
         headers: { 'X-Shared-Key': cfg('key') },
       });
       if (!res.ok) return null;
@@ -759,7 +763,7 @@
 
   async function fetchHandoffs() {
     try {
-      const res = await fetch(`${cfg('server')}/api/public-chatbot/handoffs?status=new`, {
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=new`, {
         headers: { 'X-Shared-Key': cfg('key') },
       });
       const data = await res.json();
@@ -774,7 +778,7 @@
 
   async function fetchAgents() {
     try {
-      const res = await fetch(`${cfg('server')}/api/public-chatbot/agents`, {
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/agents`, {
         headers: { 'X-Shared-Key': cfg('key') },
       });
       const data = await res.json();
