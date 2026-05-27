@@ -298,9 +298,9 @@
   <div id="login-box">
     <div class="login-title">Subsidy Support ChatBot</div>
     <div class="login-sub">Enter your credentials to start a subsidy chatbot session</div>
-    <input type="text" id="login-server" placeholder="Server URL" value="http://aix.dev.biz-japan.com" />
-    <input type="text" id="login-key" placeholder="X-Shared-Key (HTTP API)" value="test" />
-    <input type="text" id="login-agent-key" placeholder="Agent WS Key (AGENT_WS_SHARED_KEY)" value="test" />
+    <input type="text" id="login-server" placeholder="Server URL" value="https://temp-ai-bizjapan.ultrahost.jp/" />
+    <input type="text" id="login-key" placeholder="X-Shared-Key" value="test" />
+    <input type="text" id="login-agent-key" placeholder="Agent-Shared-Key" value="test" />
     <input type="text" id="login-chatbot-id" placeholder="Chatbot ID (UUID)"
            onkeydown="if(event.key==='Enter') doLogin()" style="font-family:monospace;" />
     <input type="text" id="login-uid" placeholder="User ID (UUID)" value="019d93e0-e1db-7149-a64a-316d1bf7dd24"
@@ -312,10 +312,10 @@
 
 <div id="config">
   <label>Server</label>
-  <input type="text" name="server" placeholder="Server URL" value="http://aix.dev.biz-japan.com" />
+  <input type="text" name="server" placeholder="Server URL" value="https://temp-ai-bizjapan.ultrahost.jp/" />
   <label>Key</label>
   <input type="text" name="key" placeholder="X-Shared-Key" value="test" />
-  <input type="text" name="agent-key" placeholder="Agent WS Key" value="test" style="display:none" />
+  <input type="text" name="agent-key" placeholder="Agent-Shared-Key" value="test" style="display:none" />
   <div id="user-chip" style="display:none;"></div>
   <span style="color:#52525b; font-size:12px; margin-left:4px;">serve via HTTP, not file://</span>
 </div>
