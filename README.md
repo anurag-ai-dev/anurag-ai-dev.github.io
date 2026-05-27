@@ -68,6 +68,22 @@ X-Shared-Key: {shared_key}
 }
 ```
 
+### Handoff Cancelled
+
+Fired when the user cancels a pending handoff request before an agent joins. Laravel should use this to remove the pending assignment from its queue/UI.
+
+```
+POST {LARAVEL_WEBHOOK_URL}
+X-Shared-Key: {shared_key}
+
+{
+  "event": "handoff.cancelled",
+  "data": {
+    "session_id": "uuid"
+  }
+}
+```
+
 ---
 
 ## Part 2: Agent Socket.IO
@@ -96,7 +112,7 @@ event: handoff_joined
   "agent_id": "uuid",
   "history": [
     {
-      "role": "user" | "assistant" | "agent",
+      "role": "client" | "assistant" | "agent",
       "content": "string",
       "timestamp": "iso8601"
     }
@@ -212,7 +228,27 @@ event: handoff_timeout
 
 Show "No agent is available right now. Please try again later." and re-enable the request button. The handoff record stays in the DB — it is not automatically retried.
 
-### 2. Bot suggests handoff (low-confidence turns) - CONFIDENCE SCORE BASED HANDOFF IN DEVELOPMENT
+### 2. Cancel a pending handoff
+
+Emitted when the user changes their mind before an agent joins. This cancels the pending handoff request and emits a user-only confirmation event.
+
+```
+emit: cancel_handoff
+{
+  "session_id": "uuid"
+}
+```
+
+**Receive (self only):**
+
+```
+event: handoff_cancelled
+{
+  "session_id": "uuid"
+}
+```
+
+### 3. Bot suggests handoff (low-confidence turns) - CONFIDENCE SCORE BASED HANDOFF IN DEVELOPMENT
 
 When the bot cannot confidently answer, `chatbot_response` includes a flag. The frontend should show a prompt asking the user if they want to speak to an agent. If they accept, emit `request_agent_handoff` (same as step 1).
 
@@ -225,7 +261,7 @@ event: chatbot_response
 }
 ```
 
-### 3. Agent joins (or timeout)
+### 4. Agent joins (or timeout)
 
 When an agent accepts the handoff, this is broadcast to the entire room — both the user and the agent receive it. Use `agent_name` to show a message like "田中 誠 has joined the conversation."
 
@@ -238,7 +274,7 @@ event: handoff_accepted
 }
 ```
 
-### 4. Exchange messages
+### 5. Exchange messages
 
 The user continues sending messages exactly as before via `chatbot_message`. No change is needed on the frontend — FastAPI detects the active handoff and routes the message to the agent instead of the bot.
 
@@ -254,7 +290,7 @@ event: agent_message_received
 }
 ```
 
-### 5. Handoff ends
+### 6. Handoff ends
 
 Emitted when the agent resolves the session. Show a message like "The conversation with the agent has ended." and re-enable the "Talk to Agent" button if the user may want to request again.
 
@@ -279,7 +315,9 @@ event: handoff_resolved
 | `user_message_received` | Server → Room | Agent + User |
 | `resolve_handoff` | Agent → Server | — |
 | `request_agent_handoff` | User → Server | — |
+| `cancel_handoff` | User → Server | — |
 | `handoff_triggered` | Server → User | User only |
+| `handoff_cancelled` | Server → User | User only |
 | `handoff_timeout` | Server → User | User only |
 | `handoff_resolved` | Server → Room | Agent + User |
 
