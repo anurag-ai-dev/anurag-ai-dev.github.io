@@ -329,7 +329,7 @@
         <div class="row">
           <label>Socket</label>
           <div class="status-dot" id="u-dot"></div>
-          <button class="btn-user" id="u-connect-btn" onclick="userConnect()" disabled>Connect</button>
+          <button class="btn-user" id="u-connect-btn" onclick="toggleUserSocket()" disabled>Connect</button>
         </div>
       </div>
       <div class="divider"></div>
@@ -351,7 +351,7 @@
             </svg>
           </button>
           <span id="voice-status">hold to speak</span>
-          <button class="btn-danger" id="voice-disconnect-btn" onclick="voiceDisconnect()" style="display:none; margin-left:auto;">End Voice</button>
+          <button class="btn-user" id="voice-toggle-btn" onclick="toggleVoiceConnection()" style="display:none; margin-left:auto;">Connect RTC</button>
         </div>
         <audio id="agent-audio" autoplay playsinline style="display:none;"></audio>
       </div>
@@ -524,11 +524,12 @@
     document.getElementById('user-chip').textContent = uid.slice(0, 8) + '…';
     document.getElementById('user-chip').style.display = 'block';
     document.getElementById('u-chat').innerHTML = '';
+    _setUserSocketUI(false);
+    _setVoiceUI(false, 'Connect RTC', true);
 
     userConnect();
 
-    _voiceEnsureConnected()
-      .then(() => { document.getElementById('mic-btn').disabled = false; })
+    voiceConnect()
       .catch(e => {
         setVoiceStatus(`voice unavailable: ${e.message}`);
         console.error('Voice auto-connect failed', e);
@@ -537,42 +538,45 @@
 
   // ── USER ─────────────────────────────────────────────────────────────────────
 
+  function toggleUserSocket() {
+    if (userSocket && userSocket.connected) {
+      userDisconnect();
+      return;
+    }
+    userConnect();
+  }
+
   function userConnect() {
-    if (!sessionId || userSocket) return;
-    const btn = document.getElementById('u-connect-btn');
-    btn.disabled = true;
-    btn.textContent = 'Connecting…';
+    if (!sessionId || (userSocket && userSocket.connected)) return;
+    if (userSocket) {
+      userSocket.disconnect();
+      userSocket = null;
+    }
 
-    userSocket = io(cfg('server'), { transports: ['websocket'] });
+    _setUserSocketUI(false, 'Connecting…', true);
+    const socket = io(cfg('server'), { transports: ['websocket'], reconnection: false });
+    userSocket = socket;
 
-    userSocket.on('connect', () => {
+    socket.on('connect', () => {
+      if (userSocket !== socket) return;
       document.getElementById('u-dot').classList.add('connected');
-      btn.textContent = 'Connected';
-      btn.style.background = 'var(--color-user-bg)';
-      btn.style.color = '#a7f3d0';
-      btn.style.border = '1px solid rgba(16,185,129,0.3)';
-      userSocket.emit('join_chatbot_session', { session_id: sessionId });
+      _setUserSocketUI(true);
+      socket.emit('join_chatbot_session', { session_id: sessionId });
     });
 
-    userSocket.on('disconnect', () => {
-      document.getElementById('u-dot').classList.remove('connected');
-      btn.textContent = 'Connect';
-      btn.style.background = '';
-      btn.style.color = '';
-      btn.style.border = '';
-      btn.disabled = false;
-      document.getElementById('u-send-btn').disabled = true;
-      document.getElementById('u-handoff-btn').disabled = true;
+    socket.on('disconnect', () => {
+      if (userSocket === socket) userSocket = null;
+      _setUserSocketUI(false);
       streamingBubble = null;
     });
 
-    userSocket.on('chatbot_session_joined', () => {
+    socket.on('chatbot_session_joined', () => {
       document.getElementById('u-send-btn').disabled = false;
       document.getElementById('u-handoff-btn').disabled = false;
       sysMsg('u-chat', 'Connected. How can we help?');
     });
 
-    userSocket.on('chatbot_token', (d) => {
+    socket.on('chatbot_token', (d) => {
       if (voiceTurnInProgress) return;
       const chat = document.getElementById('u-chat');
       if (!streamingBubble) {
@@ -587,7 +591,7 @@
       chat.scrollTop = chat.scrollHeight;
     });
 
-    userSocket.on('chatbot_response', (d) => {
+    socket.on('chatbot_response', (d) => {
       if (voiceTurnInProgress) { voiceTurnInProgress = false; return; }
       const chat = document.getElementById('u-chat');
       let cmText;
@@ -627,7 +631,7 @@
       if (d.handoff_triggered) showHandoffSuggestion();
     });
 
-    userSocket.on('handoff_triggered', (d) => {
+    socket.on('handoff_triggered', (d) => {
       document.getElementById('u-handoff-btn').disabled = true;
       sysMsg('u-chat', 'Connecting you to an agent…');
       if (d.client_name) {
@@ -639,25 +643,34 @@
       fetchSessionSummary(sessionId).then(renderLaravelSummary);
     });
 
-    userSocket.on('handoff_accepted', (d) => {
+    socket.on('handoff_accepted', (d) => {
       sysMsg('u-chat', `${d.agent_name || 'An agent'} has joined the conversation.`);
     });
 
-    userSocket.on('agent_message_received', (d) => {
+    socket.on('agent_message_received', (d) => {
       addChat('u-chat', 'agent-in', d.agent_name || 'Agent', d.message);
     });
 
-    userSocket.on('handoff_timeout', () => {
+    socket.on('handoff_timeout', () => {
       document.getElementById('u-handoff-btn').disabled = false;
       sysMsg('u-chat', 'No agent is available right now. Please try again later.');
     });
 
-    userSocket.on('handoff_resolved', () => {
+    socket.on('handoff_resolved', () => {
       document.getElementById('u-handoff-btn').disabled = false;
       sysMsg('u-chat', 'Session with agent has ended.');
     });
 
-    userSocket.on('error', (d) => console.error('user socket error', d));
+    socket.on('error', (d) => console.error('user socket error', d));
+  }
+
+  function userDisconnect() {
+    const socket = userSocket;
+    userSocket = null;
+    if (socket) socket.disconnect();
+    _setUserSocketUI(false);
+    streamingBubble = null;
+    sysMsg('u-chat', 'Socket disconnected.');
   }
 
   function showHandoffSuggestion() {
@@ -955,6 +968,33 @@
   let voiceAgentBuffer   = '';
   let voiceTurnInProgress = false;
 
+  function _setToggleButton(btn, connected, connectedLabel, disconnectedLabel, disabled = false) {
+    btn.disabled = disabled;
+    btn.textContent = connected ? connectedLabel : disconnectedLabel;
+    btn.classList.toggle('btn-danger', connected);
+    btn.classList.toggle('btn-user', !connected);
+  }
+
+  function _setUserSocketUI(connected, label = null, disabled = false) {
+    const btn = document.getElementById('u-connect-btn');
+    const dot = document.getElementById('u-dot');
+    dot.classList.toggle('connected', connected);
+    _setToggleButton(btn, connected, 'Disconnect', label || 'Connect', disabled || !sessionId);
+    if (!connected) {
+      document.getElementById('u-send-btn').disabled = true;
+      document.getElementById('u-handoff-btn').disabled = true;
+    }
+  }
+
+  function _setVoiceUI(connected, label = null, disabled = false) {
+    const btn = document.getElementById('voice-toggle-btn');
+    const micBtn = document.getElementById('mic-btn');
+    btn.style.display = sessionId ? '' : 'none';
+    _setToggleButton(btn, connected, 'Disconnect RTC', label || 'Connect RTC', disabled || !sessionId);
+    micBtn.disabled = !connected;
+    if (!connected) micBtn.classList.remove('active');
+  }
+
   function finishVoiceTurn() {
     voiceTurnInProgress = false;
   }
@@ -1053,6 +1093,10 @@
 
   async function _voiceEnsureConnected() {
     if (voiceRoom && voiceRoom.state === LivekitClient.ConnectionState.Connected) return;
+    if (voiceRoom) {
+      try { await voiceRoom.disconnect(); } catch (_) {}
+      voiceRoom = null;
+    }
 
     const headers = { 'X-Shared-Key': cfg('key'), 'Content-Type': 'application/json' };
     voiceSignalParams = {
@@ -1072,9 +1116,10 @@
     }
     const signalData = await res.json();
 
-    voiceRoom = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+    const room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+    voiceRoom = room;
 
-    voiceRoom.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
+    room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
       if (participant) {
         if (!voiceAgentIdentity) voiceAgentIdentity = participant.identity;
         else if (participant.identity !== voiceAgentIdentity) return;
@@ -1082,25 +1127,59 @@
       handleVoiceDataMessage(payload);
     });
 
-    voiceRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+    room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === LivekitClient.Track.Kind.Audio) {
         track.attach(document.getElementById('agent-audio'));
       }
     });
 
-    voiceRoom.on(LivekitClient.RoomEvent.Disconnected, () => {
+    room.on(LivekitClient.RoomEvent.Disconnected, () => {
+      if (voiceRoom === room) voiceRoom = null;
+      voiceSignalParams = null;
+      voiceAgentIdentity = null;
       setVoiceStatus('disconnected');
       finishVoiceTurn();
       _voiceCleanupUI();
     });
 
-    voiceRoom.on(LivekitClient.RoomEvent.Reconnecting, () => setVoiceStatus('reconnecting…'));
-    voiceRoom.on(LivekitClient.RoomEvent.Reconnected,  () => setVoiceStatus('hold to speak'));
+    room.on(LivekitClient.RoomEvent.Reconnecting, () => {
+      setVoiceStatus('reconnecting…');
+      _setVoiceUI(true, 'Disconnect RTC', true);
+    });
+    room.on(LivekitClient.RoomEvent.Reconnected,  () => {
+      setVoiceStatus('hold to speak');
+      _setVoiceUI(true);
+    });
 
-    await voiceRoom.connect(signalData.livekit_url, signalData.access_token);
-    document.getElementById('voice-disconnect-btn').style.display = '';
+    await room.connect(signalData.livekit_url, signalData.access_token);
+    _setVoiceUI(true);
+    setVoiceStatus('hold to speak');
     scheduleVoiceRefresh(signalData.token_ttl_seconds);
     sysMsg('u-chat', 'Voice connected.');
+  }
+
+  async function voiceConnect() {
+    if (!sessionId) return;
+    _setVoiceUI(false, 'Connecting RTC…', true);
+    try {
+      await _voiceEnsureConnected();
+    } catch (e) {
+      _setVoiceUI(false);
+      throw e;
+    }
+  }
+
+  async function toggleVoiceConnection() {
+    if (voiceRoom && voiceRoom.state === LivekitClient.ConnectionState.Connected) {
+      await voiceDisconnect();
+      return;
+    }
+    try {
+      await voiceConnect();
+    } catch (e) {
+      setVoiceStatus(`voice unavailable: ${e.message}`);
+      console.error('Voice reconnect failed', e);
+    }
   }
 
   async function voiceStartMic() {
@@ -1148,10 +1227,8 @@
 
   function _voiceCleanupUI() {
     clearTimeout(voiceRefreshTimer);
-    document.getElementById('voice-disconnect-btn').style.display = 'none';
-    document.getElementById('mic-btn').disabled = !sessionId;
-    document.getElementById('mic-btn').classList.remove('active');
-    setVoiceStatus(sessionId ? 'hold to speak' : 'not connected');
+    _setVoiceUI(false);
+    setVoiceStatus('not connected');
   }
 
   document.addEventListener('DOMContentLoaded', () => {
