@@ -470,7 +470,6 @@
 
   let clientUserId    = null;   // UUID of the logged-in user
   let sessionId       = null;
-  let organizationId  = null;
   let userSocket      = null;
   let agentSocket     = null;
   let activeSession   = null;   // { sessionId, agentId }
@@ -516,8 +515,7 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || res.statusText);
-      sessionId      = data.id;
-      organizationId = data.organization_id;
+      sessionId = data.id;
     } catch (e) {
       errMsg(`Failed: ${e.message}`);
       return;
@@ -806,7 +804,7 @@
 
   async function fetchAgents() {
     try {
-      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/agents?organization_id=${organizationId}`, {
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/agents`, {
         headers: { 'X-Shared-Key': cfg('key') },
       });
       const data = await res.json();
