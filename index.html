@@ -477,6 +477,7 @@
   let availableAgents = [];
   let lastHandoffs    = [];
   let streamingBubble = null;   // in-progress streaming message element
+  let textTurnPending = false;  // a typed turn is awaiting its socket response
 
   // ── LOGIN ────────────────────────────────────────────────────────────────────
 
@@ -577,7 +578,7 @@
     });
 
     socket.on('chatbot_token', (d) => {
-      if (voiceTurnInProgress) return;
+      if (voiceTurnInProgress && !textTurnPending) return;
       const chat = document.getElementById('u-chat');
       if (!streamingBubble) {
         streamingBubble = document.createElement('div');
@@ -592,7 +593,18 @@
     });
 
     socket.on('chatbot_response', (d) => {
-      if (voiceTurnInProgress) { voiceTurnInProgress = false; return; }
+      const wasTextTurn = textTurnPending;
+      textTurnPending = false;
+      if (voiceTurnInProgress && !wasTextTurn) {
+        // Voice turn renders via the LiveKit data channel; suppress the duplicate
+        // socket render but never leave a half-streamed text bubble's cursor blinking.
+        voiceTurnInProgress = false;
+        if (streamingBubble) {
+          streamingBubble.querySelector('.cm-text').innerHTML = esc(d.response);
+          streamingBubble = null;
+        }
+        return;
+      }
       const chat = document.getElementById('u-chat');
       let cmText;
       if (streamingBubble) {
@@ -712,6 +724,7 @@
     const suggestion = document.getElementById('u-handoff-suggestion');
     if (suggestion) suggestion.remove();
     voiceTurnInProgress = false;
+    textTurnPending = true;
     streamingBubble = null;
     userSocket.emit('chatbot_message', { session_id: sessionId, message });
     addChat('u-chat', 'user-out', 'You', message);
@@ -1010,7 +1023,7 @@
       case 'user_transcript':
         addChat('u-chat', 'user-out', 'You (voice)', msg.text);
         voiceAgentBubble = null; voiceAgentBuffer = '';
-        voiceTurnInProgress = true;
+        if (!textTurnPending) voiceTurnInProgress = true;
         break;
       case 'agent_text': {
         const chat = document.getElementById('u-chat');

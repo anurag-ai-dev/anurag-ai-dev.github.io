@@ -45,44 +45,11 @@ POST {LARAVEL_WEBHOOK_URL}
 X-Shared-Key: {shared_key}
 
 {
-  "event": "agent.handoff",
-  "data": {
-    "session_id": "uuid"
-  }
+  "session_id": "uuid"
 }
 ```
 
-### Handoff Resolved
-
-Fired when an agent emits `resolve_handoff`, ending the live conversation. Laravel should use this to mark the case as closed and update any agent availability state.
-
-```
-POST {LARAVEL_WEBHOOK_URL}
-X-Shared-Key: {shared_key}
-
-{
-  "event": "handoff.resolved",
-  "data": {
-    "session_id": "uuid"
-  }
-}
-```
-
-### Handoff Cancelled
-
-Fired when the user cancels a pending handoff request before an agent joins. Laravel should use this to remove the pending assignment from its queue/UI.
-
-```
-POST {LARAVEL_WEBHOOK_URL}
-X-Shared-Key: {shared_key}
-
-{
-  "event": "handoff.cancelled",
-  "data": {
-    "session_id": "uuid"
-  }
-}
-```
+Resolved and cancelled state changes are handled entirely by FastAPI (`HandoffService.resolve` / `HandoffService.cancel`). Laravel does not receive separate webhooks for those events — use the DB as the source of truth for handoff status.
 
 ---
 
@@ -171,7 +138,7 @@ event: user_message_received
 
 ### 4. End the conversation
 
-Emitted by the agent when the issue is resolved. This closes the handoff, fires the `handoff.resolved` webhook to Laravel, and re-enables the bot for the user.
+Emitted by the agent when the issue is resolved. This closes the handoff record in the DB and re-enables the bot for the user.
 
 ```
 emit: resolve_handoff
@@ -248,7 +215,7 @@ event: handoff_cancelled
 }
 ```
 
-### 3. Bot suggests handoff (low-confidence turns) - CONFIDENCE SCORE BASED HANDOFF IN DEVELOPMENT
+### 3. Bot suggests handoff (low-confidence turns)
 
 When the bot cannot confidently answer, `chatbot_response` includes a flag. The frontend should show a prompt asking the user if they want to speak to an agent. If they accept, emit `request_agent_handoff` (same as step 1).
 
