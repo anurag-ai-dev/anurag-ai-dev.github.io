@@ -21,7 +21,6 @@ Response:
   "id": "uuid",           // session_id used everywhere else
   "chatbot_id": "uuid",
   "status": "active",
-  "ended_at": null,
   "started_at": "iso8601",
   "last_activity_at": "iso8601"
 }
@@ -222,11 +221,20 @@ When the bot cannot confidently answer, `chatbot_response` includes a flag. The 
 ```
 event: chatbot_response
 {
-  ...
-  "handoff_triggered": true,
-  "handoff_reason": "string"   // reason code, e.g. "no_hits" when bot had no matching answer
+  "session_id": "uuid",
+  "response": "string",
+  "is_casual": false,
+  "confidence_tier": "high" | "medium" | "low" | null,   // null for casual turns
+  "confidence_score": 0.82,                               // 0.0–1.0; null for casual turns
+  "citations": [...] | null,
+  "handoff_triggered": true | false,
+  "handoff_reason": "no_hits" | "weak_retrieval" | null   // null when no handoff suggested
 }
 ```
+
+`handoff_reason` values:
+- `"no_hits"` — bot found no relevant content; show "Talk to Agent" prompt
+- `"weak_retrieval"` — bot found something but confidence was low; show "Talk to Agent" prompt
 
 ### 4. Agent joins (or timeout)
 
