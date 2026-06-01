@@ -31,7 +31,75 @@ Important:
 - after the session exists, all later FastAPI routes, Socket.IO events, LiveKit/RTC calls, and Laravel webhooks continue using `session_id`
 - FastAPI resolves `chatbot_id` and `organization_id` from `chatbot_sessions`, so Laravel does not need to resend them on handoff or agent events
 
-## Part 1: Outgoing Webhooks (FastAPI → Laravel)
+## Part 1: Chat Flow (User ↔ Bot)
+
+Before handoff, the user talks to the bot via Socket.IO. All chat events use the same room as handoff events — the plain `session_id` UUID.
+
+### 1. Join the session room
+
+Must be called before sending any messages. Validates the session exists and joins the room.
+
+```
+emit: join_chatbot_session
+{
+  "session_id": "uuid"
+}
+```
+
+**Receive (self only):**
+
+```
+event: chatbot_session_joined
+{
+  "session_id": "uuid"
+}
+```
+
+### 2. Send a message
+
+```
+emit: chatbot_message
+{
+  "session_id": "uuid",
+  "message": "string"
+}
+```
+
+### 3. Receive the response
+
+Tokens are streamed as they are generated. The final event fires once the full response is ready.
+
+**Per-token (during generation):**
+
+```
+event: chatbot_token
+{
+  "session_id": "uuid",
+  "token": "string"
+}
+```
+
+**Final (after generation completes):**
+
+```
+event: chatbot_response
+{
+  "session_id": "uuid",
+  "response": "string",           // full assembled response
+  "is_casual": false,
+  "confidence_tier": "high" | "medium" | "low" | null,
+  "confidence_score": 0.82,       // 0.0–1.0; null for casual turns
+  "citations": [...] | null,
+  "handoff_triggered": true | false,
+  "handoff_reason": "no_hits" | "weak_retrieval" | null
+}
+```
+
+Use `chatbot_token` events to render the streaming bubble and `chatbot_response` to finalise it with citations and confidence. Discard any in-progress streaming bubble if `is_casual` is true — no badge or citations for small talk.
+
+---
+
+## Part 2: Outgoing Webhooks (FastAPI → Laravel)
 
 FastAPI POSTs to `LARAVEL_WEBHOOK_URL` with header `X-Shared-Key`. These are fire-and-forget notifications — FastAPI does not wait for a response. Laravel should use them to update its own state and drive agent assignment.
 
@@ -159,7 +227,7 @@ event: handoff_resolved
 
 ## Part 3: User Socket.IO
 
-Only the handoff-relevant events are listed here. The full chat flow (join session, send messages, receive bot responses) is handled separately. The user must have already joined the session room via `join_chatbot_session` before any of these events will work — all handoff events use the same room.
+The user must have already joined the session room via `join_chatbot_session` (Part 1) before any of these events will work — all handoff events use the same room.
 
 ### 1. Request an agent
 
@@ -221,14 +289,9 @@ When the bot cannot confidently answer, `chatbot_response` includes a flag. The 
 ```
 event: chatbot_response
 {
-  "session_id": "uuid",
-  "response": "string",
-  "is_casual": false,
-  "confidence_tier": "high" | "medium" | "low" | null,   // null for casual turns
-  "confidence_score": 0.82,                               // 0.0–1.0; null for casual turns
-  "citations": [...] | null,
-  "handoff_triggered": true | false,
-  "handoff_reason": "no_hits" | "weak_retrieval" | null   // null when no handoff suggested
+  ...
+  "handoff_triggered": true,
+  "handoff_reason": "no_hits" | "weak_retrieval"
 }
 ```
 
