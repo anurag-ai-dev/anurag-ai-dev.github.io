@@ -91,7 +91,7 @@ event: chatbot_response
   "confidence_score": 0.82,       // 0.0–1.0; null for casual turns
   "citations": [...] | null,
   "handoff_triggered": true | false,
-  "handoff_reason": "no_hits" | "weak_retrieval" | null
+  "handoff_reason": "no_hits" | null
 }
 ```
 
@@ -291,13 +291,12 @@ event: chatbot_response
 {
   ...
   "handoff_triggered": true,
-  "handoff_reason": "no_hits" | "weak_retrieval"
+  "handoff_reason": "no_hits"
 }
 ```
 
 `handoff_reason` values:
 - `"no_hits"` — bot found no relevant content; show "Talk to Agent" prompt
-- `"weak_retrieval"` — bot found something but confidence was low; show "Talk to Agent" prompt
 
 ### 4. Agent joins (or timeout)
 
