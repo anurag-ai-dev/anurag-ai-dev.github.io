@@ -1,5 +1,18 @@
 # Human Handoff Integration
 
+## API Ownership
+
+| Resource | Owner | Notes |
+|---|---|---|
+| Session creation | **FastAPI** | `POST /api/subsidy-chatbot/session` — the only FastAPI HTTP endpoint the frontend calls |
+| Agent list | **Laravel** | `GET /api/v1/agent` — fetch available handoff agents for the org |
+| Pending handoff list | **Laravel** | Laravel tracks handoff queue state via the webhook it receives from FastAPI |
+| Chat summary | **Laravel** | Session summary (topic, sentiment, token counts) is written by FastAPI to the DB but served to the frontend via a Laravel-owned endpoint |
+
+FastAPI owns all Socket.IO events (Parts 1–3 below). Everything else — agent management, handoff queue display, and summary retrieval — is Laravel's responsibility.
+
+---
+
 ## Session bootstrap (Frontend / Laravel → FastAPI)
 
 Before any Socket.IO, handoff, or RTC call, create the chatbot session through FastAPI.

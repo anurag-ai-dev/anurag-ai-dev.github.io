@@ -932,6 +932,7 @@
       activeSession = null;
       document.getElementById('a-chat-section').style.display = 'none';
       document.getElementById('a-status-label').textContent = 'waiting…';
+      fetchHandoffs();
     });
 
     agentSocket.on('error', (d) => console.error('agent socket error', d));
