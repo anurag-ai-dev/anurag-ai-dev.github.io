@@ -116,20 +116,29 @@ Use `chatbot_token` events to render the streaming bubble and `chatbot_response`
 
 FastAPI POSTs to `LARAVEL_WEBHOOK_URL` with header `X-Shared-Key`. These are fire-and-forget notifications — FastAPI does not wait for a response. Laravel should use them to update its own state and drive agent assignment.
 
-### Handoff Requested
-
-Fired immediately when a user emits `request_agent_handoff`. Laravel should use `session_id` to look up the session, identify the user, and resolve the linked chatbot/org if needed. Once an agent is assigned, Laravel should instruct the agent app to call `join_handoff_session` via Socket.IO (see Part 2).
+All webhooks share the same URL and auth header. Use the `event` field to distinguish them.
 
 ```
 POST {LARAVEL_WEBHOOK_URL}
 X-Shared-Key: {shared_key}
 
 {
+  "event": "agent.handoff" | "handoff.resolved" | "handoff.cancelled",
   "session_id": "uuid"
 }
 ```
 
-Resolved and cancelled state changes are handled entirely by FastAPI (`HandoffService.resolve` / `HandoffService.cancel`). Laravel does not receive separate webhooks for those events — use the DB as the source of truth for handoff status.
+### agent.handoff
+
+Fired immediately when a user emits `request_agent_handoff`. Laravel should use `session_id` to look up the session, identify the user, and resolve the linked chatbot/org if needed. Once an agent is assigned, Laravel should instruct the agent app to call `join_handoff_session` via Socket.IO (see Part 2).
+
+### handoff.resolved
+
+Fired when the agent emits `resolve_handoff`. The handoff session is closed and the bot is re-enabled for the user. Laravel should update the handoff record status accordingly.
+
+### handoff.cancelled
+
+Fired when the user emits `cancel_handoff` before an agent joins. Laravel should remove the pending handoff from the queue.
 
 ---
 
