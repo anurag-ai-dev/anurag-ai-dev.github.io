@@ -15,6 +15,17 @@ FastAPI owns all Socket.IO events (Parts 1–3 below). Everything else — agent
 
 ---
 
+## Handoff Status
+
+Every handoff event includes a `status` field so the frontend always knows the current ticket state. The lifecycle maps as follows:
+
+| Status | Meaning | Triggered by |
+|---|---|---|
+| `open` | User requested handoff, waiting for agent | `request_agent_handoff` |
+| `in_progress` | Agent has joined the session | `join_handoff_session` |
+| `resolved` | Agent closed the conversation | `resolve_handoff` |
+| `cancelled` | User cancelled before agent joined | `cancel_handoff` |
+
 ---
 
 ## Session bootstrap (Frontend / Laravel → FastAPI)
@@ -134,7 +145,7 @@ X-Shared-Key: {shared_key}
 
 ### agent.handoff
 
-Fired immediately when a user emits `request_agent_handoff`. Laravel should use `session_id` to look up the session, identify the user, and resolve the linked chatbot/org if needed. Once an agent is assigned, Laravel should instruct the agent app to call `join_handoff_session` via Socket.IO (see Part 2).
+Fired immediately when a user emits `request_agent_handoff`. Laravel should use `session_id` to look up the session, identify the user, and resolve the linked chatbot/org if needed. Once an agent is assigned, Laravel should instruct the agent app to call `join_handoff_session` via Socket.IO (see Part 3).
 
 ### handoff.resolved
 
@@ -146,7 +157,7 @@ Fired when the user emits `cancel_handoff` before an agent joins. Laravel should
 
 ---
 
-## Part 2: Agent Socket.IO
+## Part 3: Agent Socket.IO
 
 The agent app connects to FastAPI's Socket.IO server after Laravel assigns them to a session. Laravel is responsible for passing the `session_id` and `agent_id` to the agent app — the agent app does not discover these itself.
 
@@ -158,7 +169,7 @@ Called once after Laravel notifies the agent app of the assignment. This claims 
 emit: join_handoff_session
 {
   "session_id": "uuid",
-  "agent_id": "uuid",      // users.id — not agents.id
+  "agent_id": "uuid",      // agents.id — not users.id
   "shared_key": "string"   // AGENT_WS_SHARED_KEY — shared secret configured on both sides
 }
 ```
@@ -170,6 +181,7 @@ event: handoff_joined
 {
   "session_id": "uuid",
   "agent_id": "uuid",
+  "status": "in_progress",
   "history": [
     {
       "role": "client" | "assistant" | "agent",
@@ -187,7 +199,8 @@ event: handoff_accepted
 {
   "session_id": "uuid",
   "agent_id": "uuid",
-  "agent_name": "string"   // display name pulled from users table
+  "agent_name": "string",   // display name pulled from users table
+  "status": "in_progress"
 }
 ```
 
@@ -245,13 +258,14 @@ emit: resolve_handoff
 ```
 event: handoff_resolved
 {
-  "session_id": "uuid"
+  "session_id": "uuid",
+  "status": "resolved"
 }
 ```
 
 ---
 
-## Part 3: User Socket.IO
+## Part 4: User Socket.IO
 
 The user must have already joined the session room via `join_chatbot_session` (Part 1) before any of these events will work — all handoff events use the same room.
 
@@ -273,7 +287,8 @@ event: handoff_triggered
 {
   "session_id": "uuid",
   "client_name": "string",   // the requesting user's display name
-  "message": "string"        // e.g. "Your request has been received."
+  "message": "string",       // e.g. "Your request has been received."
+  "status": "open"
 }
 ```
 
@@ -304,7 +319,8 @@ emit: cancel_handoff
 ```
 event: handoff_cancelled
 {
-  "session_id": "uuid"
+  "session_id": "uuid",
+  "status": "cancelled"
 }
 ```
 
@@ -333,7 +349,8 @@ event: handoff_accepted
 {
   "session_id": "uuid",
   "agent_id": "uuid",
-  "agent_name": "string"
+  "agent_name": "string",
+  "status": "in_progress"
 }
 ```
 
@@ -360,7 +377,8 @@ Emitted when the agent resolves the session. Show a message like "The conversati
 ```
 event: handoff_resolved
 {
-  "session_id": "uuid"
+  "session_id": "uuid",
+  "status": "resolved"
 }
 ```
 
@@ -368,25 +386,25 @@ event: handoff_resolved
 
 ## Event Reference
 
-| Event | Direction | Who sees it |
-|---|---|---|
-| `join_handoff_session` | Agent → Server | — |
-| `handoff_joined` | Server → Agent | Agent only |
-| `handoff_accepted` | Server → Room | Agent + User |
-| `agent_message` | Agent → Server | — |
-| `agent_message_received` | Server → Room | Agent + User |
-| `user_message_received` | Server → Room | Agent + User |
-| `resolve_handoff` | Agent → Server | — |
-| `request_agent_handoff` | User → Server | — |
-| `cancel_handoff` | User → Server | — |
-| `handoff_triggered` | Server → User | User only |
-| `handoff_cancelled` | Server → User | User only |
-| `handoff_timeout` | Server → User | User only |
-| `handoff_resolved` | Server → Room | Agent + User |
+| Event | Direction | Who sees it | Status emitted |
+|---|---|---|---|
+| `join_handoff_session` | Agent → Server | — | — |
+| `handoff_joined` | Server → Agent | Agent only | `in_progress` |
+| `handoff_accepted` | Server → Room | Agent + User | `in_progress` |
+| `agent_message` | Agent → Server | — | — |
+| `agent_message_received` | Server → Room | Agent + User | — |
+| `user_message_received` | Server → Room | Agent + User | — |
+| `resolve_handoff` | Agent → Server | — | — |
+| `handoff_resolved` | Server → Room | Agent + User | `resolved` |
+| `request_agent_handoff` | User → Server | — | — |
+| `cancel_handoff` | User → Server | — | — |
+| `handoff_triggered` | Server → User | User only | `open` |
+| `handoff_cancelled` | Server → User | User only | `cancelled` |
+| `handoff_timeout` | Server → User | User only | — |
 
 **Room:** all events broadcast to the room use the plain `session_id` UUID as the room name.
 
-**agent_id:** always `users.id`, not `agents.id`.
+**agent_id:** always `agents.id`, not `users.id`.
 
 **Agent auth:** `join_handoff_session` requires `shared_key` matching `AGENT_WS_SHARED_KEY` configured on the FastAPI server. This is a temporary shared secret — will be replaced with Laravel PAT validation later.
 
