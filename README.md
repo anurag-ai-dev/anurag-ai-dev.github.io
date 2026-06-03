@@ -384,6 +384,6 @@ event: handoff_resolved
 
 **agent_id:** always `users.id`, not `agents.id`.
 
-**Agent auth:** `join_handoff_session` requires `shared_key` matching `AGENT_WS_SHARED_KEY` configured on the FastAPI server. This is a temporary shared secret — will be replaced with PAT validation when Laravel implements personal access tokens.
+**Agent auth:** `join_handoff_session` requires `shared_key` matching `AGENT_WS_SHARED_KEY` configured on the FastAPI server. This is a temporary shared secret — will be replaced with Laravel PAT validation later.
 
 **Timeout:** configurable via `HANDOFF_AGENT_TIMEOUT_SECONDS` (default 45s). Timer starts when `handoff_triggered` is emitted and cancels automatically if the agent joins in time.
