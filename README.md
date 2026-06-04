@@ -187,19 +187,23 @@ event: handoff_joined
       "role": "client" | "assistant" | "agent",
       "content": "string",
       "timestamp": "iso8601",
-      "citations": [                          // null for client/agent messages
+      "citations": [                          // null for client/agent messages and casual turns
         {
+          "data_source_id": "uuid | null",
+          "source_title": "string",
+          "source_type": "string",
           "source_label": "string",
-          "source_url": "string | null"
+          "source_url": "string",             // may be empty string when unknown
+          "page_number": 3 | null
         }
       ] | null,
-      "confidence_score": 0.82 | null         // null for client/agent messages
+      "confidence_score": 0.82 | null         // null for client/agent messages, casual turns, or when backfill is pending
     }
   ]
 }
 ```
 
-`citations` and `confidence_score` are only populated for `role: "assistant"` messages. They are `null` for `client` and `agent` messages.
+`citations` and `confidence_score` are only populated for non-casual `role: "assistant"` messages. Both are `null` for `client` and `agent` messages, casual assistant turns, and assistant messages where the async accuracy backfill has not yet completed.
 
 **Receive (broadcast to the whole room):** sent at the same time as `handoff_joined` — this is what the user sees to know an agent has arrived.
 
