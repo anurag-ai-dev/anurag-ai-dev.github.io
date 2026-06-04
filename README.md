@@ -186,11 +186,20 @@ event: handoff_joined
     {
       "role": "client" | "assistant" | "agent",
       "content": "string",
-      "timestamp": "iso8601"
+      "timestamp": "iso8601",
+      "citations": [                          // null for client/agent messages
+        {
+          "source_label": "string",
+          "source_url": "string | null"
+        }
+      ] | null,
+      "confidence_score": 0.82 | null         // null for client/agent messages
     }
   ]
 }
 ```
+
+`citations` and `confidence_score` are only populated for `role: "assistant"` messages. They are `null` for `client` and `agent` messages.
 
 **Receive (broadcast to the whole room):** sent at the same time as `handoff_joined` — this is what the user sees to know an agent has arrived.
 

@@ -314,7 +314,7 @@
   <label>Server</label>
   <input type="text" name="server" placeholder="Server URL" value="https://temp-ai-bizjapan.ultrahost.jp/" />
   <label>Key</label>
-  <input type="text" name="key" placeholder="X-Shared-Key" value="test" />
+  <input type="text" name="key" placeholder="X-Shared-Key" value="9c1f3a7b2d4e8f91a6c0d3e5f7a1b2c4d5e6f7890a1b2c3d4e5f6a7b8c9d0e1f" />
   <input type="text" name="agent-key" placeholder="Agent-Shared-Key" value="test" style="display:none" />
   <div id="user-chip" style="display:none;"></div>
   <span style="color:#52525b; font-size:12px; margin-left:4px;">serve via HTTP, not file://</span>
@@ -911,10 +911,38 @@
         sysMsg('a-chat', 'No previous messages.');
       } else {
         sysMsg('a-chat', `— ${d.history.length} previous messages —`);
+        const chat = document.getElementById('a-chat');
         d.history.forEach(m => {
           const cls   = m.role === 'client' ? 'client' : m.role === 'agent' ? 'agent' : 'assistant';
           const label = m.role === 'client' ? 'User' : m.role === 'agent' ? 'Agent' : 'Bot';
-          addChat('a-chat', cls, label, m.content, m.timestamp);
+          const t     = m.timestamp
+            ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : ts();
+          const msg = document.createElement('div');
+          msg.className = `chat-msg ${cls}`;
+          msg.innerHTML = `<div class="cm-meta">${label} · ${t}</div><div class="cm-text">${esc(m.content)}</div>`;
+          const cmText = msg.querySelector('.cm-text');
+          if (m.role === 'assistant') {
+            if (m.confidence_score != null) {
+              const score = Math.round(m.confidence_score * 100);
+              const tier  = score >= 70 ? 'high' : score >= 40 ? 'medium' : 'low';
+              const row   = document.createElement('div');
+              row.className = 'conf-row';
+              row.innerHTML = `<span class="conf-badge conf-${tier}">${tier}</span><span class="conf-score">${score}%</span>`;
+              cmText.appendChild(row);
+            }
+            if (m.citations && m.citations.length) {
+              const citEl = document.createElement('div');
+              citEl.className = 'citations';
+              citEl.innerHTML = m.citations.map(c => c.source_url
+                ? `<a href="${esc(c.source_url)}" target="_blank" class="citation-link">${esc(c.source_label)}</a>`
+                : `<span class="citation-link">${esc(c.source_label)}</span>`
+              ).join('');
+              cmText.appendChild(citEl);
+            }
+          }
+          chat.appendChild(msg);
+          chat.scrollTop = chat.scrollHeight;
         });
         sysMsg('a-chat', '— live session —');
       }
