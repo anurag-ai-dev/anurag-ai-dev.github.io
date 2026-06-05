@@ -789,14 +789,16 @@
 
   async function fetchHandoffs() {
     try {
-      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=new`, {
-        headers: { 'X-Shared-Key': cfg('key') },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || res.statusText);
-      lastHandoffs = data;
-      document.getElementById('l-handoff-count').textContent = `${data.length} pending`;
-      renderHandoffQueue(data);
+      const [resNew, resActive] = await Promise.all([
+        fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=new`, { headers: { 'X-Shared-Key': cfg('key') } }),
+        fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=in_progress`, { headers: { 'X-Shared-Key': cfg('key') } }),
+      ]);
+      const [dataNew, dataActive] = await Promise.all([resNew.json(), resActive.json()]);
+      if (!resNew.ok) throw new Error(dataNew.detail || resNew.statusText);
+      if (!resActive.ok) throw new Error(dataActive.detail || resActive.statusText);
+      lastHandoffs = [...dataNew, ...dataActive];
+      document.getElementById('l-handoff-count').textContent = `${dataNew.length} pending`;
+      renderHandoffQueue(lastHandoffs);
     } catch (e) {
       console.error('fetch handoffs', e);
     }
@@ -825,22 +827,25 @@
       return;
     }
     items.forEach(item => {
-      const card    = document.createElement('div');
-      card.className = 'handoff-card';
-      const name    = item.client_name || null;
-      const short   = item.session_id.slice(0, 8) + '…';
-      const created = new Date(item.created_at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-      const opts    = availableAgents.length
+      const card      = document.createElement('div');
+      card.className  = 'handoff-card';
+      const name      = item.client_name || null;
+      const short     = item.session_id.slice(0, 8) + '…';
+      const created   = new Date(item.created_at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+      const isActive  = item.status === 'in_progress';
+      const opts      = availableAgents.length
         ? availableAgents.map(a => `<option value="${a.id}">${a.name}</option>`).join('')
         : '<option value="">No agents</option>';
+      const actions   = isActive
+        ? `<select id="sel-${item.session_id}">${opts}</select>
+           <button class="btn-agent" onclick="rejoinSession('${item.session_id}')" ${availableAgents.length?'':'disabled'}>Rejoin</button>`
+        : `<select id="sel-${item.session_id}">${opts}</select>
+           <button class="btn-laravel" onclick="assignAgent('${item.session_id}')" ${availableAgents.length?'':'disabled'}>Assign</button>`;
       card.innerHTML = `
         ${name ? `<div class="hc-name">${esc(name)}</div>` : ''}
-        <div class="hc-session">${short}</div>
+        <div class="hc-session">${short} <span class="muted" style="font-size:10px;">[${item.status}]</span></div>
         <div class="hc-meta">${created}</div>
-        <div class="hc-row">
-          <select id="sel-${item.session_id}">${opts}</select>
-          <button class="btn-laravel" onclick="assignAgent('${item.session_id}')" ${availableAgents.length?'':'disabled'}>Assign</button>
-        </div>`;
+        <div class="hc-row">${actions}</div>`;
       queue.appendChild(card);
     });
   }
@@ -878,6 +883,24 @@
     fetchSessionSummary(sid).then(renderAgentSummary);
     document.getElementById('a-incoming').classList.add('visible');
     document.getElementById('a-status-label').textContent = 'incoming…';
+  }
+
+  function rejoinSession(sid) {
+    const agentId   = document.getElementById(`sel-${sid}`).value;
+    if (!agentId) return;
+    const agent     = availableAgents.find(a => a.id === agentId);
+    const agentName = agent ? agent.name : agentId.slice(0,8) + '…';
+    const handoff   = lastHandoffs.find(h => h.session_id === sid);
+    const cName     = (handoff && handoff.client_name) || sid.slice(0,8) + '…';
+    pendingAssign   = { sessionId: sid, agentId, agentName, clientName: cName };
+    if (!agentSocket || !agentSocket.connected) {
+      agentConnect();
+      agentSocket.once('connect', () =>
+        agentSocket.emit('join_handoff_session', { session_id: sid, agent_id: agentId, shared_key: cfg('agent-key') })
+      );
+    } else {
+      agentSocket.emit('join_handoff_session', { session_id: sid, agent_id: agentId, shared_key: cfg('agent-key') });
+    }
   }
 
   // ── AGENT ────────────────────────────────────────────────────────────────────
