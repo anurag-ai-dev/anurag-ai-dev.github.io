@@ -789,7 +789,7 @@
 
   async function fetchHandoffs() {
     try {
-      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=open`, {
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=new`, {
         headers: { 'X-Shared-Key': cfg('key') },
       });
       const data = await res.json();
