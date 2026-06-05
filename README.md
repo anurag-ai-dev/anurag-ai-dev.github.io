@@ -21,7 +21,7 @@ Every handoff event includes a `status` field so the frontend always knows the c
 
 | Status | Meaning | Triggered by |
 |---|---|---|
-| `open` | User requested handoff, waiting for agent | `request_agent_handoff` |
+| `new` | User requested handoff, waiting for agent | `request_agent_handoff` |
 | `in_progress` | Agent has joined the session | `join_handoff_session` |
 | `resolved` | Agent closed the conversation | `resolve_handoff` |
 | `cancelled` | User cancelled before agent joined | `cancel_handoff` |
@@ -301,7 +301,7 @@ event: handoff_triggered
   "session_id": "uuid",
   "client_name": "string",   // the requesting user's display name
   "message": "string",       // e.g. "Your request has been received."
-  "status": "open"
+  "status": "new"
 }
 ```
 
