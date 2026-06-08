@@ -165,11 +165,14 @@ The agent app connects to FastAPI's Socket.IO server after Laravel assigns them 
 
 Called once after Laravel notifies the agent app of the assignment. This claims the handoff record in the DB and admits the agent into the shared room.
 
+Pass either `agent_id` (agents.id) or `user_id` (users.id) — one is required. Both resolve to the same Agent record and run the same claim flow.
+
 ```
 emit: join_handoff_session
 {
   "session_id": "uuid",
-  "agent_id": "uuid",      // agents.id — not users.id
+  "agent_id": "uuid",      // agents.id — optional if user_id is provided
+  "user_id": "uuid",       // users.id — optional if agent_id is provided
   "shared_key": "string"   // AGENT_WS_SHARED_KEY — shared secret configured on both sides
 }
 ```
@@ -181,6 +184,7 @@ event: handoff_joined
 {
   "session_id": "uuid",
   "agent_id": "uuid",
+  "user_id": "uuid" | null,   // agent's users.id; null if the agent has no linked user
   "status": "in_progress",
   "history": [
     {
@@ -352,6 +356,8 @@ event: chatbot_response
 
 `handoff_reason` values:
 - `"no_hits"` — bot found no relevant content; show "Talk to Agent" prompt
+- `"low_confidence"` — bot confidence fell below the chatbot's configured threshold; show "Talk to Agent" prompt
+- `"user_requested"` — user message matched a trigger keyword; the prompt is pre-populated but the user must still tap "Talk to Agent" to confirm
 
 ### 4. Agent joins (or timeout)
 
@@ -411,13 +417,13 @@ event: handoff_resolved
 | `handoff_resolved` | Server → Room | Agent + User | `resolved` |
 | `request_agent_handoff` | User → Server | — | — |
 | `cancel_handoff` | User → Server | — | — |
-| `handoff_triggered` | Server → User | User only | `open` |
+| `handoff_triggered` | Server → User | User only | `new` |
 | `handoff_cancelled` | Server → User | User only | `cancelled` |
 | `handoff_timeout` | Server → User | User only | — |
 
 **Room:** all events broadcast to the room use the plain `session_id` UUID as the room name.
 
-**agent_id:** always `agents.id`, not `users.id`.
+**agent_id:** always `agents.id`, not `users.id`. Exception: `join_handoff_session` also accepts `user_id` (users.id) as an alternative identifier.
 
 **Agent auth:** `join_handoff_session` requires `shared_key` matching `AGENT_WS_SHARED_KEY` configured on the FastAPI server. This is a temporary shared secret — will be replaced with Laravel PAT validation later.
 
