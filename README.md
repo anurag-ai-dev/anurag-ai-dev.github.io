@@ -119,7 +119,7 @@ event: chatbot_response
   "confidence_score": 0.82,       // 0.0–1.0; null for casual turns
   "citations": [...] | null,
   "handoff_triggered": true | false,
-  "handoff_reason": "no_hits" | null
+  "handoff_reason": "no_hits" | null    // non-null only when handoff_triggered is true
 }
 ```
 
@@ -159,7 +159,7 @@ Fired when the user emits `cancel_handoff` before an agent joins. Laravel should
 
 ## Part 3: Agent Socket.IO
 
-The agent app connects to FastAPI's Socket.IO server after Laravel assigns them to a session. Laravel is responsible for passing the `session_id` and `agent_id` to the agent app — the agent app does not discover these itself.
+The agent app connects to FastAPI's Socket.IO server after Laravel assigns them to a session. Laravel is responsible for passing the `session_id` and either the `agent_id` or `user_id` to the agent app — the agent app does not discover these itself.
 
 ### 1. Join the handoff session
 
@@ -229,7 +229,7 @@ Sent each time the agent types a reply. The server saves the message to the DB a
 emit: agent_message
 {
   "session_id": "uuid",
-  "agent_id": "uuid",
+  "agent_id": "uuid",    // must be agents.id — returned in handoff_joined even if you joined via user_id
   "message": "string"
 }
 ```
@@ -304,7 +304,7 @@ event: handoff_triggered
 {
   "session_id": "uuid",
   "client_name": "string",   // the requesting user's display name
-  "message": "string",       // e.g. "Your request has been received."
+  "message": "string",       // "Your request has been received. An agent will be with you shortly."
   "status": "new"
 }
 ```
@@ -356,8 +356,6 @@ event: chatbot_response
 
 `handoff_reason` values:
 - `"no_hits"` — bot found no relevant content; show "Talk to Agent" prompt
-- `"low_confidence"` — bot confidence fell below the chatbot's configured threshold; show "Talk to Agent" prompt
-- `"user_requested"` — user message matched a trigger keyword; the prompt is pre-populated but the user must still tap "Talk to Agent" to confirm
 
 ### 4. Agent joins (or timeout)
 
