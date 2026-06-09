@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Handoff Test Client</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -477,6 +478,7 @@
   let availableAgents = [];
   let lastHandoffs    = [];
   let streamingBubble = null;   // in-progress streaming message element
+  let streamingText   = '';    // accumulated raw text for live markdown re-render
   let textTurnPending = false;  // a typed turn is awaiting its socket response
 
   // ── LOGIN ────────────────────────────────────────────────────────────────────
@@ -581,14 +583,17 @@
       if (voiceTurnInProgress && !textTurnPending) return;
       const chat = document.getElementById('u-chat');
       if (!streamingBubble) {
+        streamingText = '';
         streamingBubble = document.createElement('div');
         streamingBubble.className = 'chat-msg bot';
         streamingBubble.innerHTML =
           `<div class="cm-meta">Assistant · ${ts()}</div>` +
-          `<div class="cm-text"><span class="stream-text"></span><span class="stream-cursor"></span></div>`;
+          `<div class="cm-text"></div>`;
         chat.appendChild(streamingBubble);
       }
-      streamingBubble.querySelector('.stream-text').textContent += d.token;
+      streamingText += d.token;
+      streamingBubble.querySelector('.cm-text').innerHTML =
+        marked.parse(streamingText) + '<span class="stream-cursor"></span>';
       chat.scrollTop = chat.scrollHeight;
     });
 
@@ -600,7 +605,7 @@
         // socket render but never leave a half-streamed text bubble's cursor blinking.
         voiceTurnInProgress = false;
         if (streamingBubble) {
-          streamingBubble.querySelector('.cm-text').innerHTML = esc(d.response);
+          streamingBubble.querySelector('.cm-text').innerHTML = marked.parse(d.response);
           streamingBubble = null;
         }
         return;
@@ -609,14 +614,15 @@
       let cmText;
       if (streamingBubble) {
         cmText = streamingBubble.querySelector('.cm-text');
-        cmText.innerHTML = esc(d.response);
+        cmText.innerHTML = marked.parse(d.response);
         streamingBubble = null;
+        streamingText = '';
       } else {
         const msg = document.createElement('div');
         msg.className = 'chat-msg bot';
         msg.innerHTML =
           `<div class="cm-meta">Assistant · ${ts()}</div>` +
-          `<div class="cm-text">${esc(d.response)}</div>`;
+          `<div class="cm-text">${marked.parse(d.response)}</div>`;
         chat.appendChild(msg);
         cmText = msg.querySelector('.cm-text');
       }
