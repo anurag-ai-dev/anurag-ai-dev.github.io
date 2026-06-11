@@ -431,3 +431,112 @@ event: handoff_resolved
 **Agent auth:** `join_handoff_session` requires `shared_key` matching `AGENT_WS_SHARED_KEY` configured on the FastAPI server. This is a temporary shared secret — will be replaced with Laravel PAT validation later.
 
 **Timeout:** configurable via `HANDOFF_AGENT_TIMEOUT_SECONDS` (default 45s). Timer starts when `handoff_triggered` is emitted and cancels automatically if the agent joins in time.
+
+---
+
+## Part 5: WebRTC Voice (LiveKit)
+
+The WebRTC layer provides a real-time voice channel between the user and the AI voice agent via LiveKit. It operates independently of the Socket.IO handoff flow — a voice session can be started at any point within an existing chatbot session.
+
+### Connection flow
+
+```
+Frontend → POST /api/rtc/signal  → FastAPI dispatches agent → LiveKit room
+Frontend connects to LiveKit room using returned access_token + livekit_url
+Frontend publishes mic audio → agent processes STT → streams audio + text back
+```
+
+The `session_id` required here is the same one returned by `chatbot_session_joined` in Part 1 — no separate session creation step is needed.
+
+---
+
+### POST /api/rtc/signal
+
+Obtains a LiveKit access token and dispatches the voice agent into the room. **Rate limited to 5 requests per minute per IP.**
+
+**Auth:** `X-Shared-Key` header (same as all other routes).
+
+**Request:**
+
+```json
+{
+  "session_id": "uuid"
+}
+```
+
+**Response:**
+
+```json
+{
+  "livekit_url": "wss://your-livekit-server",
+  "room_name": "bizjapan-room-{session_id}",
+  "participant_identity": "chatbot:{session_id}",
+  "access_token": "eyJ...",
+  "session_id": "uuid",
+  "token_ttl_seconds": 3600
+}
+```
+
+Pass `livekit_url` and `access_token` directly to `room.connect()`. Use `token_ttl_seconds` to schedule a proactive refresh.
+
+If the agent is already dispatched for this room, the call is a no-op — it returns a fresh token without re-dispatching.
+
+**Error responses:**
+
+| Status | Meaning |
+|---|---|
+| `404` | `session_id` not found |
+| `429` | Rate limit exceeded — retry after `X-RateLimit-Reset` |
+| `503` | Agent dispatch failed after retries — safe to retry |
+
+---
+
+### POST /api/rtc/refresh
+
+Returns a fresh token for an already-connected room without re-dispatching the agent. Call ~30 seconds before `token_ttl_seconds` elapses.
+
+**Request / Response:**
+
+```json
+// Request
+{ "session_id": "uuid" }
+
+// Response
+{ "access_token": "eyJ...", "token_ttl_seconds": 3600 }
+```
+
+Pass the new `access_token` to `room.refreshToken(token)` on the existing room object.
+
+---
+
+### DataChannel messages (agent → frontend)
+
+The voice agent sends JSON over the LiveKit DataChannel. Listen on `RoomEvent.DataReceived` and decode the payload as UTF-8 JSON.
+
+| `type` | When | Key fields |
+|---|---|---|
+| `user_transcript` | After STT detects end-of-speech | `text` — transcribed user speech |
+| `agent_text` | During agent response generation | `text` (chunk), `final: true` on last chunk |
+| `error` | Agent-side error | `data.message` |
+
+For `agent_text`: accumulate `text` chunks until `final: true` to build the complete reply.
+
+---
+
+### Socket.IO: rtc_session_ended
+
+When the LiveKit room closes, FastAPI emits this event to the Socket.IO session room so the frontend can clean up voice UI.
+
+```
+event: rtc_session_ended
+{
+  "session_id": "uuid",
+  "event": "room_finished" | "participant_left"
+}
+```
+
+---
+
+### Room naming
+
+Each `session_id` maps to exactly one room: `bizjapan-room-{session_id}`. The room is shared between the user participant and the AI voice agent participant.
