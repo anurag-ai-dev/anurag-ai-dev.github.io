@@ -59,6 +59,30 @@ Important:
 - after the session exists, all later FastAPI routes, Socket.IO events, LiveKit/RTC calls, and Laravel webhooks continue using `session_id`
 - FastAPI resolves `chatbot_id` and `organization_id` from `chatbot_sessions`, so Laravel does not need to resend them on handoff or agent events
 
+## Socket.IO Connection
+
+Socket.IO server: `https://temp-ai-bizjapan.ultrahost.jp/`
+API docs: `https://temp-ai-bizjapan.ultrahost.jp/docs`
+
+Pass the API key in the auth object during the initial handshake:
+
+```
+auth: { "x-api-key": "<SOCKET_API_KEY>" }
+```
+
+> **Auth is currently disabled on the server** (`SOCKET_AUTH_ENABLED=false`), so `x-api-key` is not required right now. Wire it up anyway so the widget is ready when auth is enabled.
+
+The server emits `auth_success` (empty payload) once the connection is established. Wait for this before emitting `join_chatbot_session`.
+
+```
+event: auth_success
+{}
+```
+
+After `auth_success`, emit `join_chatbot_session` (see Part 1 below) to enter the session room. Only then is the widget ready to send and receive messages.
+
+---
+
 ## Part 1: Chat Flow (User ↔ Bot)
 
 Before handoff, the user talks to the bot via Socket.IO. All chat events use the same room as handoff events — the plain `session_id` UUID.
