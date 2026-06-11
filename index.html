@@ -318,6 +318,7 @@
   <input type="text" name="key" placeholder="X-Shared-Key" value="9c1f3a7b2d4e8f91a6c0d3e5f7a1b2c4d5e6f7890a1b2c3d4e5f6a7b8c9d0e1f" />
   <input type="text" name="agent-key" placeholder="Agent-Shared-Key" value="test" style="display:none" />
   <div id="user-chip" style="display:none;"></div>
+  <button onclick="resetSession()" style="margin-left:auto; padding:6px 14px; background:#7f1d1d; border:1px solid #ef4444; color:#fca5a5; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; letter-spacing:0.02em;">⊕ New session</button>
   <span style="color:#52525b; font-size:12px; margin-left:4px;">serve via HTTP, not file://</span>
 </div>
 
@@ -470,6 +471,7 @@
   // ── state ────────────────────────────────────────────────────────────────────
 
   let clientUserId    = null;   // UUID of the logged-in user
+  let chatbotId       = null;
   let sessionId       = null;
   let userSocket      = null;
   let agentSocket     = null;
@@ -489,39 +491,25 @@
     el.style.display = text ? 'block' : 'none';
   }
 
-  async function doLogin() {
-    const server   = document.getElementById('login-server').value.trim();
-    const key      = document.getElementById('login-key').value.trim();
-    const agentKey = document.getElementById('login-agent-key').value.trim();
-    const chatbotId = document.getElementById('login-chatbot-id').value.trim();
-    const uid       = document.getElementById('login-uid').value.trim();
-    const uuidRe   = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function doLogin() {
+    const server        = document.getElementById('login-server').value.trim();
+    const key           = document.getElementById('login-key').value.trim();
+    const agentKey      = document.getElementById('login-agent-key').value.trim();
+    const chatbotIdInput = document.getElementById('login-chatbot-id').value.trim();
+    const uid           = document.getElementById('login-uid').value.trim();
+    const uuidRe        = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!server) { errMsg('Server URL is required.'); return; }
     if (!key) { errMsg('API key is required.'); return; }
     if (!agentKey) { errMsg('Agent WS key is required.'); return; }
-    if (!chatbotId || !uuidRe.test(chatbotId)) { errMsg('Enter a valid chatbot UUID.'); return; }
+    if (!chatbotIdInput || !uuidRe.test(chatbotIdInput)) { errMsg('Enter a valid chatbot UUID.'); return; }
     if (!uid || !uuidRe.test(uid)) { errMsg('Enter a valid user UUID.'); return; }
 
-    // Sync into the config bar so all subsequent calls use these values
     document.querySelector('#config input[name="server"]').value = server;
     document.querySelector('#config input[name="key"]').value = key;
     document.querySelector('#config input[name="agent-key"]').value = agentKey;
     clientUserId = uid;
+    chatbotId    = chatbotIdInput;
     errMsg('');
-
-    try {
-      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Shared-Key': cfg('key') },
-        body: JSON.stringify({ chatbot_id: chatbotId, client_id: uid }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || res.statusText);
-      sessionId = data.id;
-    } catch (e) {
-      errMsg(`Failed: ${e.message}`);
-      return;
-    }
 
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('user-chip').textContent = uid.slice(0, 8) + '…';
@@ -531,12 +519,6 @@
     _setVoiceUI(false, 'Connect RTC', true);
 
     userConnect();
-
-    voiceConnect()
-      .catch(e => {
-        setVoiceStatus(`voice unavailable: ${e.message}`);
-        console.error('Voice auto-connect failed', e);
-      });
   }
 
   // ── USER ─────────────────────────────────────────────────────────────────────
@@ -550,7 +532,8 @@
   }
 
   function userConnect() {
-    if (!sessionId || (userSocket && userSocket.connected)) return;
+    if (!chatbotId && !sessionId) return;
+    if (userSocket && userSocket.connected) return;
     if (userSocket) {
       userSocket.disconnect();
       userSocket = null;
@@ -564,7 +547,9 @@
       if (userSocket !== socket) return;
       document.getElementById('u-dot').classList.add('connected');
       _setUserSocketUI(true);
-      socket.emit('join_chatbot_session', { session_id: sessionId });
+      const joinPayload = { chatbot_id: chatbotId, client_id: clientUserId };
+      if (sessionId) joinPayload.session_id = sessionId;
+      socket.emit('join_chatbot_session', joinPayload);
     });
 
     socket.on('disconnect', () => {
@@ -573,10 +558,23 @@
       streamingBubble = null;
     });
 
-    socket.on('chatbot_session_joined', () => {
+    socket.on('chatbot_session_joined', (d) => {
+      sessionId = d.session_id;
+      localStorage.setItem('sio_session', JSON.stringify({
+        sessionId, chatbotId, clientUserId,
+        server: cfg('server'), key: cfg('key'), agentKey: cfg('agent-key'),
+      }));
       document.getElementById('u-send-btn').disabled = false;
       document.getElementById('u-handoff-btn').disabled = false;
+      if (!voiceConnecting) _setVoiceUI(false, 'Connect RTC', false);
       sysMsg('u-chat', 'Connected. How can we help?');
+      if (!voiceConnecting) {
+        voiceConnect()
+          .catch(e => {
+            setVoiceStatus(`voice unavailable: ${e.message}`);
+            console.error('Voice auto-connect failed', e);
+          });
+      }
     });
 
     socket.on('chatbot_token', (d) => {
@@ -1038,6 +1036,7 @@
   let voiceAgentBubble   = null;
   let voiceAgentBuffer   = '';
   let voiceTurnInProgress = false;
+  let voiceConnecting     = false;
 
   function _setToggleButton(btn, connected, connectedLabel, disconnectedLabel, disabled = false) {
     btn.disabled = disabled;
@@ -1050,7 +1049,7 @@
     const btn = document.getElementById('u-connect-btn');
     const dot = document.getElementById('u-dot');
     dot.classList.toggle('connected', connected);
-    _setToggleButton(btn, connected, 'Disconnect', label || 'Connect', disabled || !sessionId);
+    _setToggleButton(btn, connected, 'Disconnect', label || 'Connect', disabled || (!sessionId && !chatbotId));
     if (!connected) {
       document.getElementById('u-send-btn').disabled = true;
       document.getElementById('u-handoff-btn').disabled = true;
@@ -1230,14 +1229,18 @@
   }
 
   async function voiceConnect() {
-    if (!sessionId) return;
+    if (!sessionId || voiceConnecting) return;
+    if (voiceRoom && voiceRoom.state === LivekitClient.ConnectionState.Connected) return;
+    voiceConnecting = true;
     _setVoiceUI(false, 'Connecting RTC…', true);
     try {
       await _voiceEnsureConnected();
     } catch (e) {
       _setVoiceUI(false);
+      voiceConnecting = false;
       throw e;
     }
+    voiceConnecting = false;
   }
 
   async function toggleVoiceConnection() {
@@ -1302,7 +1305,41 @@
     setVoiceStatus('not connected');
   }
 
+  function resetSession() {
+    localStorage.removeItem('sio_session');
+    location.reload();
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem('sio_session');
+    if (saved) {
+      try {
+        const s = JSON.parse(saved);
+        sessionId    = s.sessionId;
+        chatbotId    = s.chatbotId;
+        clientUserId = s.clientUserId;
+        document.querySelector('#config input[name="server"]').value    = s.server;
+        document.querySelector('#config input[name="key"]').value       = s.key;
+        document.querySelector('#config input[name="agent-key"]').value = s.agentKey;
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('user-chip').textContent = (s.clientUserId || '').slice(0, 8) + '…';
+        document.getElementById('user-chip').style.display = 'block';
+        document.getElementById('u-chat').innerHTML = '';
+        _setUserSocketUI(false);
+        _setVoiceUI(false, 'Connect RTC', true);
+        userConnect();
+        setTimeout(() => {
+          voiceConnect()
+            .catch(e => {
+              setVoiceStatus(`voice unavailable: ${e.message}`);
+              console.error('Voice auto-connect failed', e);
+            });
+        }, 1500);
+      } catch (_) {
+        localStorage.removeItem('sio_session');
+      }
+    }
+
     const micBtn = document.getElementById('mic-btn');
     micBtn.addEventListener('mousedown',  (e) => { e.preventDefault(); voiceStartMic(); });
     window.addEventListener('mouseup',    ()  => { if (voiceMicActive) voiceStopMic(); });

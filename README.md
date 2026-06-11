@@ -4,7 +4,7 @@
 
 | Resource | Owner | Notes |
 |---|---|---|
-| Session creation | **FastAPI** | `POST /api/subsidy-chatbot/session` — permanent FastAPI endpoint |
+| Session creation | **FastAPI** | `POST /api/subsidy-chatbot/session` — available but not required; widgets can create sessions directly via `join_chatbot_session` |
 | Agent list | **Laravel** | Fetch available handoff agents for the org |
 | Pending handoff list | **Laravel** | Laravel tracks handoff queue state via the webhook it receives from FastAPI |
 | Chat summary | **Laravel** | Session summary (topic, sentiment, token counts) is written by FastAPI to the DB but served to the frontend via a Laravel-owned endpoint |
@@ -28,36 +28,12 @@ Every handoff event includes a `status` field so the frontend always knows the c
 
 ---
 
-## Session bootstrap (Frontend / Laravel → FastAPI)
+## Session bootstrap
 
-Before any Socket.IO, handoff, or RTC call, create the chatbot session through FastAPI.
+Session creation is handled inside `join_chatbot_session` — no separate HTTP call needed.
 
-```
-POST /api/subsidy-chatbot/session
-X-Shared-Key: {shared_key}
-
-{
-  "chatbot_id": "uuid",   // required: chat_bots.id
-  "client_id": "uuid"     // optional: users.id
-}
-```
-
-Response:
-
-```
-{
-  "id": "uuid",           // session_id used everywhere else
-  "chatbot_id": "uuid",
-  "status": "active",
-  "started_at": "iso8601",
-  "last_activity_at": "iso8601"
-}
-```
-
-Important:
-- `chatbot_id` is required only when creating the session
-- after the session exists, all later FastAPI routes, Socket.IO events, LiveKit/RTC calls, and Laravel webhooks continue using `session_id`
-- FastAPI resolves `chatbot_id` and `organization_id` from `chatbot_sessions`, so Laravel does not need to resend them on handoff or agent events
+- **First visit** — pass `chatbot_id` only. Store the `session_id` returned in `chatbot_session_joined`.
+- **Returning visit / reconnect** — pass both `chatbot_id` and the stored `session_id`. The existing session is rejoined.
 
 ## Socket.IO Connection
 
@@ -89,12 +65,14 @@ Before handoff, the user talks to the bot via Socket.IO. All chat events use the
 
 ### 1. Join the session room
 
-Must be called before sending any messages. Validates the session exists and joins the room.
+Must be called before sending any messages. Pass `session_id` to join an existing session, or `chatbot_id` to create a new session and join it in one step.
 
 ```
 emit: join_chatbot_session
 {
-  "session_id": "uuid"
+  "chatbot_id": "uuid",  // required — always send this
+  "session_id": "uuid",  // optional — include if stored; server rejoins instead of creating new
+  "client_id": "uuid"    // optional — users.id of the end-user; only used when creating a new session
 }
 ```
 
@@ -103,9 +81,12 @@ emit: join_chatbot_session
 ```
 event: chatbot_session_joined
 {
-  "session_id": "uuid"
+  "session_id": "uuid",
+  "created": true | false   // true when a new session was just created
 }
 ```
+
+When `chatbot_id` is used, store the returned `session_id` for all subsequent events.
 
 ### 2. Send a message
 
