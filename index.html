@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Handoff Test Client</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -283,6 +282,13 @@
 
     /* ── confidence badge ── */
     .conf-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .conf-badge {
+      font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 8px;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .conf-high   { background: rgba(16,185,129,0.15); color: #10b981; }
+    .conf-medium { background: rgba(245,158,11,0.15);  color: #f59e0b; }
+    .conf-low    { background: rgba(239,68,68,0.15);   color: #ef4444; }
     .conf-score  { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   </style>
 </head>
@@ -292,12 +298,10 @@
   <div id="login-box">
     <div class="login-title">Subsidy Support ChatBot</div>
     <div class="login-sub">Enter your credentials to start a subsidy chatbot session</div>
-    <input type="text" id="login-server" placeholder="Server URL" value="https://temp-ai-bizjapan.ultrahost.jp/" />
-    <input type="text" id="login-key" placeholder="X-Shared-Key" />
-    <input type="text" id="login-agent-key" placeholder="Agent-Shared-Key" value="test" />
+    <input type="text" id="login-server" placeholder="Server URL" value="https://ai.dev.biz-japan.com/" />
+    <input type="text" id="login-key" placeholder="X-Shared-Key" value="base64:MtHJaOCsLvDvayp6S7SYp4ErE0czDQT+cO9cG0OeE+w=" />
+    <input type="text" id="login-pat" placeholder="Agent Sanctum PAT (1|abc123…)" style="font-family:monospace;" />
     <input type="text" id="login-chatbot-id" placeholder="Chatbot ID (UUID)" value="330a2c64-9904-49d6-b836-c653f90d3675"
-           onkeydown="if(event.key==='Enter') doLogin()" style="font-family:monospace;" />
-    <input type="text" id="login-uid" placeholder="User ID (UUID)" value="019d93e0-e1db-7149-a64a-316d1bf7dd24"
            onkeydown="if(event.key==='Enter') doLogin()" style="font-family:monospace;" />
     <button class="login-btn" onclick="doLogin()">Start Chat</button>
     <div class="login-err" id="login-err"></div>
@@ -306,12 +310,12 @@
 
 <div id="config">
   <label>Server</label>
-  <input type="text" name="server" placeholder="Server URL" value="https://temp-ai-bizjapan.ultrahost.jp/" />
+  <input type="text" name="server" placeholder="Server URL" value="https://ai.dev.biz-japan.com/" />
   <label>Key</label>
   <input type="text" name="key" placeholder="X-Shared-Key" value="base64:MtHJaOCsLvDvayp6S7SYp4ErE0czDQT+cO9cG0OeE+w=" />
-  <input type="text" name="agent-key" placeholder="Agent-Shared-Key" value="test" style="display:none" />
+  <label>PAT</label>
+  <input type="text" name="pat" placeholder="1|abc123… (agent Sanctum PAT)" style="font-family:monospace;" />
   <div id="user-chip" style="display:none;"></div>
-  <button onclick="resetSession()" style="margin-left:auto; padding:6px 14px; background:#7f1d1d; border:1px solid #ef4444; color:#fca5a5; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; letter-spacing:0.02em;">⊕ New session</button>
   <span style="color:#52525b; font-size:12px; margin-left:4px;">serve via HTTP, not file://</span>
 </div>
 
@@ -407,6 +411,8 @@
       </div>
       <div class="divider"></div>
 
+      <div class="divider"></div>
+
       <div id="a-incoming">
         <div class="incoming-label">Incoming handoff</div>
         <div class="incoming-detail" id="a-incoming-name"></div>
@@ -463,8 +469,7 @@
 
   // ── state ────────────────────────────────────────────────────────────────────
 
-  let clientUserId    = null;   // UUID of the logged-in user
-  let chatbotId       = null;
+  let chatbotId       = null;   // UUID of the chatbot; join_chatbot_session needs it every time
   let sessionId       = null;
   let userSocket      = null;
   let agentSocket     = null;
@@ -473,8 +478,6 @@
   let availableAgents = [];
   let lastHandoffs    = [];
   let streamingBubble = null;   // in-progress streaming message element
-  let streamingText   = '';    // accumulated raw text for live markdown re-render
-  let textTurnPending = false;  // a typed turn is awaiting its socket response
 
   // ── LOGIN ────────────────────────────────────────────────────────────────────
 
@@ -484,34 +487,31 @@
     el.style.display = text ? 'block' : 'none';
   }
 
-  function doLogin() {
-    const server        = document.getElementById('login-server').value.trim();
-    const key           = document.getElementById('login-key').value.trim();
-    const agentKey      = document.getElementById('login-agent-key').value.trim();
-    const chatbotIdInput = document.getElementById('login-chatbot-id').value.trim();
-    const uid           = document.getElementById('login-uid').value.trim();
-    const uuidRe        = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  async function doLogin() {
+    const server    = document.getElementById('login-server').value.trim();
+    const key       = document.getElementById('login-key').value.trim();
+    const pat       = document.getElementById('login-pat').value.trim();
+    const botId     = document.getElementById('login-chatbot-id').value.trim();
+    const uuidRe   = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!server) { errMsg('Server URL is required.'); return; }
     if (!key) { errMsg('API key is required.'); return; }
-    if (!agentKey) { errMsg('Agent WS key is required.'); return; }
-    if (!chatbotIdInput || !uuidRe.test(chatbotIdInput)) { errMsg('Enter a valid chatbot UUID.'); return; }
-    if (!uid || !uuidRe.test(uid)) { errMsg('Enter a valid user UUID.'); return; }
+    if (!pat) { errMsg('Agent PAT is required — the socket handshake validates it.'); return; }
+    if (!botId || !uuidRe.test(botId)) { errMsg('Enter a valid chatbot UUID.'); return; }
 
+    // Sync into the config bar so all subsequent calls use these values
     document.querySelector('#config input[name="server"]').value = server;
     document.querySelector('#config input[name="key"]').value = key;
-    document.querySelector('#config input[name="agent-key"]').value = agentKey;
-    clientUserId = uid;
-    chatbotId    = chatbotIdInput;
+    document.querySelector('#config input[name="pat"]').value = pat;
+    chatbotId = botId;
+    sessionId = null;   // join_chatbot_session creates it and returns it
     errMsg('');
 
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('user-chip').textContent = uid.slice(0, 8) + '…';
-    document.getElementById('user-chip').style.display = 'block';
     document.getElementById('u-chat').innerHTML = '';
     _setUserSocketUI(false);
     _setVoiceUI(false, 'Connect RTC', true);
 
-    userConnect();
+    userConnect();   // voice auto-connects once chatbot_session_joined yields a session_id
   }
 
   // ── USER ─────────────────────────────────────────────────────────────────────
@@ -525,24 +525,33 @@
   }
 
   function userConnect() {
-    if (!chatbotId && !sessionId) return;
-    if (userSocket && userSocket.connected) return;
+    if (!chatbotId || (userSocket && userSocket.connected)) return;
     if (userSocket) {
       userSocket.disconnect();
       userSocket = null;
     }
 
     _setUserSocketUI(false, 'Connecting…', true);
-    const socket = io(cfg('server'), { transports: ['websocket'], reconnection: false });
+    const socket = io(cfg('server'), {
+      transports: ['websocket'],
+      reconnection: false,
+      auth: { token: cfg('pat') },
+    });
     userSocket = socket;
 
     socket.on('connect', () => {
       if (userSocket !== socket) return;
       document.getElementById('u-dot').classList.add('connected');
       _setUserSocketUI(true);
-      const joinPayload = { chatbot_id: chatbotId, client_id: clientUserId };
-      if (sessionId) joinPayload.session_id = sessionId;
-      socket.emit('join_chatbot_session', joinPayload);
+      // chatbot_id is always required; session_id only on rejoin
+      const payload = { chatbot_id: chatbotId };
+      if (sessionId) payload.session_id = sessionId;
+      socket.emit('join_chatbot_session', payload);
+    });
+
+    socket.on('connect_error', (e) => {
+      _setUserSocketUI(false);
+      sysMsg('u-chat', `Connection refused: ${e.message} — check the PAT.`);
     });
 
     socket.on('disconnect', () => {
@@ -552,75 +561,62 @@
     });
 
     socket.on('chatbot_session_joined', (d) => {
-      sessionId = d.session_id;
-      localStorage.setItem('sio_session', JSON.stringify({
-        sessionId, chatbotId, clientUserId,
-        server: cfg('server'), key: cfg('key'), agentKey: cfg('agent-key'),
-      }));
+      const isFirstJoin = !sessionId;
+      sessionId = d.session_id;   // server-created on first join; every later event needs it
+      document.getElementById('user-chip').textContent = sessionId.slice(0, 8) + '…';
+      document.getElementById('user-chip').style.display = 'block';
       document.getElementById('u-send-btn').disabled = false;
       document.getElementById('u-handoff-btn').disabled = false;
-      if (!voiceConnecting) _setVoiceUI(false, 'Connect RTC', false);
-      sysMsg('u-chat', 'Connected. How can we help?');
-      if (!voiceConnecting) {
-        voiceConnect()
-          .catch(e => {
-            setVoiceStatus(`voice unavailable: ${e.message}`);
-            console.error('Voice auto-connect failed', e);
-          });
+      sysMsg('u-chat', `Connected${d.created ? ' (new session)' : ''}. How can we help?`);
+
+      if (isFirstJoin) {
+        voiceConnect().catch(e => {
+          setVoiceStatus(`voice unavailable: ${e.message}`);
+          console.error('Voice auto-connect failed', e);
+        });
       }
     });
 
     socket.on('chatbot_token', (d) => {
-      if (voiceTurnInProgress && !textTurnPending) return;
+      if (voiceTurnInProgress) return;
       const chat = document.getElementById('u-chat');
       if (!streamingBubble) {
-        streamingText = '';
         streamingBubble = document.createElement('div');
         streamingBubble.className = 'chat-msg bot';
         streamingBubble.innerHTML =
           `<div class="cm-meta">Assistant · ${ts()}</div>` +
-          `<div class="cm-text"></div>`;
+          `<div class="cm-text"><span class="stream-text"></span><span class="stream-cursor"></span></div>`;
         chat.appendChild(streamingBubble);
       }
-      streamingText += d.token;
-      streamingBubble.querySelector('.cm-text').innerHTML =
-        marked.parse(streamingText) + '<span class="stream-cursor"></span>';
+      streamingBubble.querySelector('.stream-text').textContent += d.token;
       chat.scrollTop = chat.scrollHeight;
     });
 
     socket.on('chatbot_response', (d) => {
-      const wasTextTurn = textTurnPending;
-      textTurnPending = false;
-      if (voiceTurnInProgress && !wasTextTurn) {
-        // Voice turn renders via the LiveKit data channel; suppress the duplicate
-        // socket render but never leave a half-streamed text bubble's cursor blinking.
-        voiceTurnInProgress = false;
-        if (streamingBubble) {
-          streamingBubble.querySelector('.cm-text').innerHTML = marked.parse(d.response);
-          streamingBubble = null;
-        }
-        return;
-      }
+      if (voiceTurnInProgress) { voiceTurnInProgress = false; return; }
       const chat = document.getElementById('u-chat');
       let cmText;
       if (streamingBubble) {
         cmText = streamingBubble.querySelector('.cm-text');
-        cmText.innerHTML = marked.parse(d.response);
+        cmText.innerHTML = esc(d.response);
         streamingBubble = null;
-        streamingText = '';
       } else {
         const msg = document.createElement('div');
         msg.className = 'chat-msg bot';
         msg.innerHTML =
           `<div class="cm-meta">Assistant · ${ts()}</div>` +
-          `<div class="cm-text">${marked.parse(d.response)}</div>`;
+          `<div class="cm-text">${esc(d.response)}</div>`;
         chat.appendChild(msg);
         cmText = msg.querySelector('.cm-text');
       }
-      if (d.confidence_score != null) {
-        const row = document.createElement('div');
+      if (d.confidence_tier) {
+        const tier = d.confidence_tier.toLowerCase();
+        const pct  = d.confidence_score != null ? `${Math.round(d.confidence_score * 100)}%` : '';
+        const row  = document.createElement('div');
         row.className = 'conf-row';
-        row.innerHTML = `<span class="conf-score">${Math.round(d.confidence_score * 100)}%</span>`;
+        row.innerHTML =
+          `<span class="conf-badge conf-${tier}">${tier}</span>` +
+          (pct ? `<span class="conf-score">${pct}</span>` : '');
         cmText.appendChild(row);
       }
       if (d.citations && d.citations.length) {
@@ -717,7 +713,6 @@
     const suggestion = document.getElementById('u-handoff-suggestion');
     if (suggestion) suggestion.remove();
     voiceTurnInProgress = false;
-    textTurnPending = true;
     streamingBubble = null;
     userSocket.emit('chatbot_message', { session_id: sessionId, message });
     addChat('u-chat', 'user-out', 'You', message);
@@ -782,16 +777,14 @@
 
   async function fetchHandoffs() {
     try {
-      const [resNew, resActive] = await Promise.all([
-        fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=new`, { headers: { 'X-Shared-Key': cfg('key') } }),
-        fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=in_progress`, { headers: { 'X-Shared-Key': cfg('key') } }),
-      ]);
-      const [dataNew, dataActive] = await Promise.all([resNew.json(), resActive.json()]);
-      if (!resNew.ok) throw new Error(dataNew.detail || resNew.statusText);
-      if (!resActive.ok) throw new Error(dataActive.detail || resActive.statusText);
-      lastHandoffs = [...dataNew, ...dataActive];
-      document.getElementById('l-handoff-count').textContent = `${dataNew.length} pending`;
-      renderHandoffQueue(lastHandoffs);
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=new`, {
+        headers: { 'X-Shared-Key': cfg('key') },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      lastHandoffs = data;
+      document.getElementById('l-handoff-count').textContent = `${data.length} pending`;
+      renderHandoffQueue(data);
     } catch (e) {
       console.error('fetch handoffs', e);
     }
@@ -820,25 +813,22 @@
       return;
     }
     items.forEach(item => {
-      const card      = document.createElement('div');
-      card.className  = 'handoff-card';
-      const name      = item.client_name || null;
-      const short     = item.session_id.slice(0, 8) + '…';
-      const created   = new Date(item.created_at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-      const isActive  = item.status === 'in_progress';
-      const opts      = availableAgents.length
-        ? availableAgents.map(a => `<option value="${a.id}">${a.name}</option>`).join('')
+      const card    = document.createElement('div');
+      card.className = 'handoff-card';
+      const name    = item.client_name || null;
+      const short   = item.session_id.slice(0, 8) + '…';
+      const created = new Date(item.created_at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+      const opts    = availableAgents.length
+        ? availableAgents.map(a => `<option value="${a.user_id}">${a.name}</option>`).join('')
         : '<option value="">No agents</option>';
-      const actions   = isActive
-        ? `<select id="sel-${item.session_id}">${opts}</select>
-           <button class="btn-agent" onclick="rejoinSession('${item.session_id}')" ${availableAgents.length?'':'disabled'}>Rejoin</button>`
-        : `<select id="sel-${item.session_id}">${opts}</select>
-           <button class="btn-laravel" onclick="assignAgent('${item.session_id}')" ${availableAgents.length?'':'disabled'}>Assign</button>`;
       card.innerHTML = `
         ${name ? `<div class="hc-name">${esc(name)}</div>` : ''}
-        <div class="hc-session">${short} <span class="muted" style="font-size:10px;">[${item.status}]</span></div>
+        <div class="hc-session">${short}</div>
         <div class="hc-meta">${created}</div>
-        <div class="hc-row">${actions}</div>`;
+        <div class="hc-row">
+          <select id="sel-${item.session_id}">${opts}</select>
+          <button class="btn-laravel" onclick="assignAgent('${item.session_id}')" ${availableAgents.length?'':'disabled'}>Assign</button>
+        </div>`;
       queue.appendChild(card);
     });
   }
@@ -861,7 +851,7 @@
   function assignAgent(sid) {
     const agentId   = document.getElementById(`sel-${sid}`).value;
     if (!agentId) return;
-    const agent     = availableAgents.find(a => a.id === agentId);
+    const agent     = availableAgents.find(a => a.user_id === agentId);
     const agentName = agent ? agent.name : agentId.slice(0,8) + '…';
     const handoff   = lastHandoffs.find(h => h.session_id === sid);
     const cName     = (handoff && handoff.client_name) || sid.slice(0,8) + '…';
@@ -878,30 +868,15 @@
     document.getElementById('a-status-label').textContent = 'incoming…';
   }
 
-  function rejoinSession(sid) {
-    const agentId   = document.getElementById(`sel-${sid}`).value;
-    if (!agentId) return;
-    const agent     = availableAgents.find(a => a.id === agentId);
-    const agentName = agent ? agent.name : agentId.slice(0,8) + '…';
-    const handoff   = lastHandoffs.find(h => h.session_id === sid);
-    const cName     = (handoff && handoff.client_name) || sid.slice(0,8) + '…';
-    pendingAssign   = { sessionId: sid, agentId, agentName, clientName: cName };
-    if (!agentSocket || !agentSocket.connected) {
-      agentConnect();
-      agentSocket.once('connect', () =>
-        agentSocket.emit('join_handoff_session', { session_id: sid, agent_id: agentId, shared_key: cfg('agent-key') })
-      );
-    } else {
-      agentSocket.emit('join_handoff_session', { session_id: sid, agent_id: agentId, shared_key: cfg('agent-key') });
-    }
-  }
-
   // ── AGENT ────────────────────────────────────────────────────────────────────
 
   function agentConnect() {
     if (agentSocket && agentSocket.connected) return;
 
-    agentSocket = io(cfg('server'), { transports: ['websocket'] });
+    agentSocket = io(cfg('server'), {
+      transports: ['websocket'],
+      auth: { token: cfg('pat') },
+    });
 
     agentSocket.on('connect', () => {
       document.getElementById('a-dot').classList.add('connected');
@@ -927,36 +902,10 @@
         sysMsg('a-chat', 'No previous messages.');
       } else {
         sysMsg('a-chat', `— ${d.history.length} previous messages —`);
-        const chat = document.getElementById('a-chat');
         d.history.forEach(m => {
           const cls   = m.role === 'client' ? 'client' : m.role === 'agent' ? 'agent' : 'assistant';
           const label = m.role === 'client' ? 'User' : m.role === 'agent' ? 'Agent' : 'Bot';
-          const t     = m.timestamp
-            ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : ts();
-          const msg = document.createElement('div');
-          msg.className = `chat-msg ${cls}`;
-          msg.innerHTML = `<div class="cm-meta">${label} · ${t}</div><div class="cm-text">${esc(m.content)}</div>`;
-          const cmText = msg.querySelector('.cm-text');
-          if (m.role === 'assistant') {
-            if (m.confidence_score != null) {
-              const row = document.createElement('div');
-              row.className = 'conf-row';
-              row.innerHTML = `<span class="conf-score">${Math.round(m.confidence_score * 100)}%</span>`;
-              cmText.appendChild(row);
-            }
-            if (m.citations && m.citations.length) {
-              const citEl = document.createElement('div');
-              citEl.className = 'citations';
-              citEl.innerHTML = m.citations.map(c => c.source_url
-                ? `<a href="${esc(c.source_url)}" target="_blank" class="citation-link">${esc(c.source_label)}</a>`
-                : `<span class="citation-link">${esc(c.source_label)}</span>`
-              ).join('');
-              cmText.appendChild(citEl);
-            }
-          }
-          chat.appendChild(msg);
-          chat.scrollTop = chat.scrollHeight;
+          addChat('a-chat', cls, label, m.content, m.timestamp);
         });
         sysMsg('a-chat', '— live session —');
       }
@@ -974,7 +923,6 @@
       activeSession = null;
       document.getElementById('a-chat-section').style.display = 'none';
       document.getElementById('a-status-label').textContent = 'waiting…';
-      fetchHandoffs();
     });
 
     agentSocket.on('error', (d) => console.error('agent socket error', d));
@@ -982,11 +930,13 @@
 
   function agentAccept() {
     if (!pendingAssign) return;
+    const token = cfg('pat');
+    if (!token) { alert('Enter the agent PAT in the config bar first.'); return; }
     document.getElementById('a-accept-btn').disabled = true;
-    const { sessionId: sid, agentId } = pendingAssign;
+    const { sessionId: sid } = pendingAssign;
 
     const doJoin = () => {
-      agentSocket.emit('join_handoff_session', { session_id: sid, agent_id: agentId, shared_key: cfg('agent-key') });
+      agentSocket.emit('join_handoff_session', { session_id: sid, token });
     };
 
     if (agentSocket && agentSocket.connected) {
@@ -1001,8 +951,7 @@
     if (!agentSocket || !activeSession) return;
     const message = document.getElementById('a-message').value.trim();
     if (!message) return;
-    const { sessionId, agentId } = activeSession;
-    agentSocket.emit('agent_message', { session_id: sessionId, agent_id: agentId, message });
+    agentSocket.emit('agent_message', { session_id: activeSession.sessionId, message });
     addChat('a-chat', 'agent', 'You', message);
     document.getElementById('a-message').value = '';
   }
@@ -1023,7 +972,6 @@
   let voiceAgentBubble   = null;
   let voiceAgentBuffer   = '';
   let voiceTurnInProgress = false;
-  let voiceConnecting     = false;
 
   function _setToggleButton(btn, connected, connectedLabel, disconnectedLabel, disabled = false) {
     btn.disabled = disabled;
@@ -1036,7 +984,7 @@
     const btn = document.getElementById('u-connect-btn');
     const dot = document.getElementById('u-dot');
     dot.classList.toggle('connected', connected);
-    _setToggleButton(btn, connected, 'Disconnect', label || 'Connect', disabled || (!sessionId && !chatbotId));
+    _setToggleButton(btn, connected, 'Disconnect', label || 'Connect', disabled || !sessionId);
     if (!connected) {
       document.getElementById('u-send-btn').disabled = true;
       document.getElementById('u-handoff-btn').disabled = true;
@@ -1067,7 +1015,7 @@
       case 'user_transcript':
         addChat('u-chat', 'user-out', 'You (voice)', msg.text);
         voiceAgentBubble = null; voiceAgentBuffer = '';
-        if (!textTurnPending) voiceTurnInProgress = true;
+        voiceTurnInProgress = true;
         break;
       case 'agent_text': {
         const chat = document.getElementById('u-chat');
@@ -1096,10 +1044,14 @@
         const bubbles = chat.querySelectorAll('.chat-msg.bot .cm-text');
         const cmText = bubbles.length ? bubbles[bubbles.length - 1] : null;
         if (cmText && !msg.is_casual) {
-          if (msg.confidence_score != null) {
-            const row = document.createElement('div');
+          if (msg.confidence_tier) {
+            const tier = msg.confidence_tier.toLowerCase();
+            const pct  = msg.confidence_score != null ? `${Math.round(msg.confidence_score * 100)}%` : '';
+            const row  = document.createElement('div');
             row.className = 'conf-row';
-            row.innerHTML = `<span class="conf-score">${Math.round(msg.confidence_score * 100)}%</span>`;
+            row.innerHTML =
+              `<span class="conf-badge conf-${tier}">${tier}</span>` +
+              (pct ? `<span class="conf-score">${pct}</span>` : '');
             cmText.appendChild(row);
           }
           if (msg.citations && msg.citations.length) {
@@ -1212,18 +1164,14 @@
   }
 
   async function voiceConnect() {
-    if (!sessionId || voiceConnecting) return;
-    if (voiceRoom && voiceRoom.state === LivekitClient.ConnectionState.Connected) return;
-    voiceConnecting = true;
+    if (!sessionId) return;
     _setVoiceUI(false, 'Connecting RTC…', true);
     try {
       await _voiceEnsureConnected();
     } catch (e) {
       _setVoiceUI(false);
-      voiceConnecting = false;
       throw e;
     }
-    voiceConnecting = false;
   }
 
   async function toggleVoiceConnection() {
@@ -1288,41 +1236,7 @@
     setVoiceStatus('not connected');
   }
 
-  function resetSession() {
-    localStorage.removeItem('sio_session');
-    location.reload();
-  }
-
   document.addEventListener('DOMContentLoaded', () => {
-    const saved = localStorage.getItem('sio_session');
-    if (saved) {
-      try {
-        const s = JSON.parse(saved);
-        sessionId    = s.sessionId;
-        chatbotId    = s.chatbotId;
-        clientUserId = s.clientUserId;
-        document.querySelector('#config input[name="server"]').value    = s.server;
-        document.querySelector('#config input[name="key"]').value       = s.key;
-        document.querySelector('#config input[name="agent-key"]').value = s.agentKey;
-        document.getElementById('login-screen').style.display = 'none';
-        document.getElementById('user-chip').textContent = (s.clientUserId || '').slice(0, 8) + '…';
-        document.getElementById('user-chip').style.display = 'block';
-        document.getElementById('u-chat').innerHTML = '';
-        _setUserSocketUI(false);
-        _setVoiceUI(false, 'Connect RTC', true);
-        userConnect();
-        setTimeout(() => {
-          voiceConnect()
-            .catch(e => {
-              setVoiceStatus(`voice unavailable: ${e.message}`);
-              console.error('Voice auto-connect failed', e);
-            });
-        }, 1500);
-      } catch (_) {
-        localStorage.removeItem('sio_session');
-      }
-    }
-
     const micBtn = document.getElementById('mic-btn');
     micBtn.addEventListener('mousedown',  (e) => { e.preventDefault(); voiceStartMic(); });
     window.addEventListener('mouseup',    ()  => { if (voiceMicActive) voiceStopMic(); });
