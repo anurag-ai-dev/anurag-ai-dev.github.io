@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
+  
   <style>
     :root {
       --bg-base: #09090b;
@@ -19,13 +19,13 @@
       --border-focus: #3f3f46;
       --text-main: #f4f4f5;
       --text-muted: #a1a1aa;
-
+      
       --color-user: #10b981;
       --color-user-bg: #064e3b;
-
+      
       --color-agent: #6366f1;
       --color-agent-bg: #312e81;
-
+      
       --color-laravel: #f59e0b;
       --color-laravel-bg: #78350f;
 
@@ -34,11 +34,11 @@
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
-
+    
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 13px;
-      background: var(--bg-base);
+      font-size: 13px; 
+      background: var(--bg-base); 
       color: var(--text-main);
       display: flex; flex-direction: column; height: 100vh; overflow: hidden;
       -webkit-font-smoothing: antialiased;
@@ -51,8 +51,8 @@
       display: flex; align-items: center; justify-content: center; z-index: 100;
     }
     #login-box {
-      background: var(--bg-panel); border: 1px solid var(--border-color);
-      border-radius: 16px; padding: 40px; display: flex; flex-direction: column;
+      background: var(--bg-panel); border: 1px solid var(--border-color); 
+      border-radius: 16px; padding: 40px; display: flex; flex-direction: column; 
       gap: 16px; width: 360px; box-shadow: 0 20px 40px rgba(0,0,0,0.4);
     }
     #login-box .login-title { font-size: 20px; font-weight: 600; color: var(--text-main); letter-spacing: -0.02em; }
@@ -93,9 +93,9 @@
 
     /* ── panels ── */
     #panels { display: flex; flex: 1; overflow: hidden; padding: 16px; gap: 16px; }
-    .panel  {
-      flex: 1; display: flex; flex-direction: column;
-      background: var(--bg-panel); border: 1px solid var(--border-color);
+    .panel  { 
+      flex: 1; display: flex; flex-direction: column; 
+      background: var(--bg-panel); border: 1px solid var(--border-color); 
       border-radius: 12px; overflow: hidden;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
@@ -156,7 +156,7 @@
     }
     .chat-msg { display: flex; flex-direction: column; gap: 4px; max-width: 85%; align-items: flex-start; animation: fadeIn 0.3s ease; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-
+    
     .chat-msg .cm-meta { font-size: 11px; color: var(--text-muted); padding: 0 4px; font-weight: 500; }
     .chat-msg .cm-text {
       padding: 10px 14px; border-radius: 14px; font-size: 13px;
@@ -165,18 +165,18 @@
 
     .chat-msg.user-out  { align-self: flex-end; align-items: flex-end; }
     .chat-msg.user-out  .cm-text { background: var(--color-user-bg); color: #a7f3d0; border-radius: 14px 14px 2px 14px; }
-
+    
     .chat-msg.bot       .cm-text { background: var(--bg-input); color: var(--text-main); border-radius: 14px 14px 14px 2px; }
-
+    
     .chat-msg.agent-in  .cm-text { background: var(--color-agent-bg); color: #c7d2fe; border-radius: 14px 14px 14px 2px; }
-
+    
     .chat-msg.client    .cm-text { background: var(--bg-input); color: var(--text-main); border-radius: 14px 14px 14px 2px; }
-
+    
     .chat-msg.agent     { align-self: flex-end; align-items: flex-end; }
     .chat-msg.agent     .cm-text { background: var(--color-agent-bg); color: #c7d2fe; border-radius: 14px 14px 2px 14px; }
-
+    
     .chat-msg.assistant .cm-text { background: var(--bg-input); color: var(--text-main); border-radius: 14px 14px 14px 2px; opacity: 0.8; }
-
+    
     .chat-msg.system-msg         { align-self: center; max-width: 100%; }
     .chat-msg.system-msg .cm-text {
       background: transparent; border: none; padding: 4px;
@@ -184,38 +184,6 @@
     }
 
     .chat-input-row { display: flex; gap: 8px; flex-shrink: 0; margin-top: 4px; }
-    .attachment-strip {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: 4px;
-    }
-    .attachment-preview {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 8px;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      background: var(--bg-base);
-    }
-    .attachment-preview img {
-      width: 42px;
-      height: 42px;
-      object-fit: cover;
-      border-radius: 6px;
-      border: 1px solid var(--border-color);
-    }
-    .attachment-clear {
-      background: transparent;
-      color: var(--text-muted);
-      border: 1px solid var(--border-color);
-      padding: 2px 8px;
-      font-size: 11px;
-    }
 
     /* ── agent incoming card ── */
     #a-incoming {
@@ -241,8 +209,8 @@
     .hc-row     { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
 
     .agent-list  { display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; padding-right: 4px; }
-    .agent-item  {
-      padding: 8px 12px; background: var(--bg-base); border: 1px solid var(--border-color);
+    .agent-item  { 
+      padding: 8px 12px; background: var(--bg-base); border: 1px solid var(--border-color); 
       border-radius: 6px; font-size: 12px; color: var(--text-main); display: flex; align-items: center; gap: 8px;
     }
     .agent-item::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-agent); }
@@ -369,12 +337,10 @@
       </div>
       <div class="chat-input-row">
         <input type="text" id="u-message" placeholder="Type a message…" onkeydown="if(event.key==='Enter') userSend()" />
-        <input id="u-attachment" type="file" accept="image/*" style="display:none" />
-        <button class="btn-warn" type="button" onclick="document.getElementById('u-attachment').click()">Image</button>
         <button class="btn-user" id="u-send-btn" onclick="userSend()" disabled>Send</button>
         <button class="btn-warn" id="u-handoff-btn" onclick="userRequestHandoff()" disabled>Agent</button>
+        <button class="btn-danger" id="u-end-btn" onclick="userEndSession()" disabled>End</button>
       </div>
-      <div id="u-attachment-strip" class="attachment-strip" style="display:none;"></div>
 
       <div id="voice-section">
         <div class="voice-row">
@@ -461,12 +427,9 @@
         <div class="chat-area" id="a-chat"></div>
         <div class="chat-input-row">
           <input type="text" id="a-message" placeholder="Type a reply…" onkeydown="if(event.key==='Enter') agentSend()" />
-          <input id="a-attachment" type="file" accept="image/*" style="display:none" />
-          <button class="btn-warn" type="button" onclick="document.getElementById('a-attachment').click()">Image</button>
           <button class="btn-agent"  onclick="agentSend()">Send</button>
           <button class="btn-danger" onclick="agentResolve()">Resolve</button>
         </div>
-        <div id="a-attachment-strip" class="attachment-strip" style="display:none;"></div>
       </div>
 
     </div>
@@ -480,34 +443,14 @@
   function cfg(name) { return document.querySelector(`#config input[name="${name}"]`).value.trim(); }
   function ts()      { return new Date().toTimeString().slice(0, 8); }
 
-  function renderAttachments(attachments) {
-    if (!attachments || !attachments.length) return '';
-    return `
-      <div class="mt-2 space-y-1 text-xs text-gray-300">
-        ${attachments.map(att => {
-          const name = att.file_name || att.name || 'Attachment';
-          const url = att.file_url || att.url || '';
-          const meta = att.size_label ? ` · ${esc(att.size_label)}` : '';
-          const body = att.is_image && url
-            ? `<img src="${esc(url)}" alt="${esc(name)}" class="mt-1 max-w-40 rounded border border-gray-700" />`
-            : `${esc(name)}${meta}`;
-          return url
-            ? `<a href="${esc(url)}" target="_blank" rel="noreferrer" class="block text-blue-300 hover:text-blue-200">${body}</a>`
-            : `<div class="text-gray-400">${body}</div>`;
-        }).join('')}
-      </div>`;
-  }
-
-  function addChat(chatId, cls, label, text, time, attachments) {
+  function addChat(chatId, cls, label, text, time) {
     const chat = document.getElementById(chatId);
     const t = time
       ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : ts();
     const msg = document.createElement('div');
     msg.className = `chat-msg ${cls}`;
-    msg.innerHTML =
-      `<div class="cm-meta">${label} · ${t}</div>` +
-      `<div class="cm-text">${esc(text)}${renderAttachments(attachments)}</div>`;
+    msg.innerHTML = `<div class="cm-meta">${label} · ${t}</div><div class="cm-text">${esc(text)}</div>`;
     chat.appendChild(msg);
     chat.scrollTop = chat.scrollHeight;
   }
@@ -525,91 +468,6 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  function bytesLabel(bytes) {
-    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let i = 0;
-    while (size >= 1024 && i < units.length - 1) {
-      size /= 1024;
-      i += 1;
-    }
-    return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-  }
-
-  function attachmentPayloadFromFile(file, url) {
-    return {
-      id: file.name,
-      name: file.name,
-      size: file.size,
-      type: file.type || 'image/*',
-      url,
-      is_image: true,
-      size_label: bytesLabel(file.size),
-    };
-  }
-
-  function renderAttachmentDraft(targetId, file, url) {
-    const strip = document.getElementById(targetId);
-    if (!file || !url) {
-      strip.style.display = 'none';
-      strip.innerHTML = '';
-      return;
-    }
-    strip.style.display = 'flex';
-    strip.innerHTML = `
-      <div class="attachment-preview">
-        <img src="${esc(url)}" alt="${esc(file.name)}" />
-        <div>
-          <div style="color:var(--text-main);">${esc(file.name)}</div>
-          <div>${esc(bytesLabel(file.size))}</div>
-        </div>
-        <button class="attachment-clear" type="button">Remove</button>
-      </div>`;
-  }
-
-  function clearAttachment(kind) {
-    if (kind === 'user') {
-      userAttachment = null;
-      renderAttachmentDraft('u-attachment-strip');
-      document.getElementById('u-attachment').value = '';
-    } else {
-      agentAttachment = null;
-      renderAttachmentDraft('a-attachment-strip');
-      document.getElementById('a-attachment').value = '';
-    }
-  }
-
-  function bindAttachmentInput(inputId, stripId, kind) {
-    const input = document.getElementById(inputId);
-    input.addEventListener('change', () => {
-      const file = input.files && input.files[0];
-      if (!file) {
-        clearAttachment(kind);
-        return;
-      }
-      if (!file.type.startsWith('image/')) {
-        alert('Pick image file only.');
-        input.value = '';
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const url = String(reader.result || '');
-        const payload = attachmentPayloadFromFile(file, url);
-        if (kind === 'user') userAttachment = payload;
-        else agentAttachment = payload;
-        renderAttachmentDraft(stripId, file, url);
-        const strip = document.getElementById(stripId);
-        strip.querySelector('button').onclick = () => clearAttachment(kind);
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  bindAttachmentInput('u-attachment', 'u-attachment-strip', 'user');
-  bindAttachmentInput('a-attachment', 'a-attachment-strip', 'agent');
-
   // ── state ────────────────────────────────────────────────────────────────────
 
   let chatbotId       = null;   // UUID of the chatbot; join_chatbot_session needs it every time
@@ -621,8 +479,6 @@
   let availableAgents = [];
   let lastHandoffs    = [];
   let streamingBubble = null;   // in-progress streaming message element
-  let userAttachment  = null;
-  let agentAttachment = null;
 
   // ── LOGIN ────────────────────────────────────────────────────────────────────
 
@@ -653,8 +509,6 @@
 
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('u-chat').innerHTML = '';
-    clearAttachment('user');
-    clearAttachment('agent');
     _setUserSocketUI(false);
     _setVoiceUI(false, 'Connect RTC', true);
 
@@ -705,7 +559,6 @@
       if (userSocket === socket) userSocket = null;
       _setUserSocketUI(false);
       streamingBubble = null;
-      clearAttachment('user');
     });
 
     socket.on('chatbot_session_joined', (d) => {
@@ -715,6 +568,7 @@
       document.getElementById('user-chip').style.display = 'block';
       document.getElementById('u-send-btn').disabled = false;
       document.getElementById('u-handoff-btn').disabled = false;
+      document.getElementById('u-end-btn').disabled = false;
       sysMsg('u-chat', `Connected${d.created ? ' (new session)' : ''}. How can we help?`);
 
       if (isFirstJoin) {
@@ -767,11 +621,6 @@
           (pct ? `<span class="conf-score">${pct}</span>` : '');
         cmText.appendChild(row);
       }
-      if (d.attachments && d.attachments.length) {
-        const attEl = document.createElement('div');
-        attEl.innerHTML = renderAttachments(d.attachments);
-        cmText.appendChild(attEl);
-      }
       if (d.citations && d.citations.length) {
         const citEl = document.createElement('div');
         citEl.className = 'citations';
@@ -802,7 +651,7 @@
     });
 
     socket.on('agent_message_received', (d) => {
-      addChat('u-chat', 'agent-in', d.agent_name || 'Agent', d.message, null, d.attachments);
+      addChat('u-chat', 'agent-in', d.agent_name || 'Agent', d.message);
     });
 
     socket.on('handoff_timeout', () => {
@@ -815,7 +664,18 @@
       sysMsg('u-chat', 'Session with agent has ended.');
     });
 
-    socket.on('error', (d) => console.error('user socket error', d));
+    // Send stays enabled on purpose: the server-side rejection of a message on an
+    // ended session is the thing under test, so it must be reachable from the UI.
+    socket.on('session_ended', (d) => {
+      document.getElementById('u-end-btn').disabled = true;
+      sysMsg('u-chat', `Chat ended${d.handoff_cancelled ? ' — the handoff was cancelled.' : '.'}`);
+      laravelRefresh();
+    });
+
+    socket.on('error', (d) => {
+      console.error('user socket error', d);
+      sysMsg('u-chat', `<span style="color:var(--color-danger);">error: ${esc(d.message || d)}</span>`);
+    });
   }
 
   function userDisconnect() {
@@ -824,7 +684,6 @@
     if (socket) socket.disconnect();
     _setUserSocketUI(false);
     streamingBubble = null;
-    clearAttachment('user');
     sysMsg('u-chat', 'Socket disconnected.');
   }
 
@@ -863,22 +722,25 @@
 
   function userSend() {
     const message = document.getElementById('u-message').value.trim();
-    if (!userSocket || !sessionId || (!message && !userAttachment)) return;
+    if (!message || !userSocket || !sessionId) return;
     const suggestion = document.getElementById('u-handoff-suggestion');
     if (suggestion) suggestion.remove();
     voiceTurnInProgress = false;
     streamingBubble = null;
-    const attachments = userAttachment ? [userAttachment] : [];
-    userSocket.emit('chatbot_message', { session_id: sessionId, message, attachments });
-    addChat('u-chat', 'user-out', 'You', message, null, attachments);
+    userSocket.emit('chatbot_message', { session_id: sessionId, message });
+    addChat('u-chat', 'user-out', 'You', message);
     document.getElementById('u-message').value = '';
-    clearAttachment('user');
   }
 
   function userRequestHandoff() {
     if (!sessionId || !userSocket) return;
     userSocket.emit('request_agent_handoff', { session_id: sessionId });
     document.getElementById('u-handoff-btn').disabled = true;
+  }
+
+  function userEndSession() {
+    if (!sessionId || !userSocket) return;
+    userSocket.emit('end_chatbot_session', { session_id: sessionId });
   }
 
   // ── SUMMARY ──────────────────────────────────────────────────────────────────
@@ -1022,7 +884,6 @@
     fetchSessionSummary(sid).then(renderAgentSummary);
     document.getElementById('a-incoming').classList.add('visible');
     document.getElementById('a-status-label').textContent = 'incoming…';
-    clearAttachment('agent');
   }
 
   // ── AGENT ────────────────────────────────────────────────────────────────────
@@ -1043,7 +904,6 @@
     agentSocket.on('disconnect', () => {
       document.getElementById('a-dot').classList.remove('connected');
       document.getElementById('a-status-label').textContent = 'offline';
-      clearAttachment('agent');
     });
 
     agentSocket.on('handoff_joined', (d) => {
@@ -1063,7 +923,7 @@
         d.history.forEach(m => {
           const cls   = m.role === 'client' ? 'client' : m.role === 'agent' ? 'agent' : 'assistant';
           const label = m.role === 'client' ? 'User' : m.role === 'agent' ? 'Agent' : 'Bot';
-          addChat('a-chat', cls, label, m.content, m.timestamp, m.attachments);
+          addChat('a-chat', cls, label, m.content, m.timestamp);
         });
         sysMsg('a-chat', '— live session —');
       }
@@ -1072,7 +932,7 @@
     agentSocket.on('handoff_accepted', () => {});
 
     agentSocket.on('user_message_received', (d) => {
-      addChat('a-chat', 'client', pendingAssign?.clientName || 'User', d.message, null, d.attachments);
+      addChat('a-chat', 'client', pendingAssign?.clientName || 'User', d.message);
     });
 
     agentSocket.on('agent_message_received', () => { /* shown optimistically */ });
@@ -1083,7 +943,17 @@
       document.getElementById('a-status-label').textContent = 'waiting…';
     });
 
-    agentSocket.on('error', (d) => console.error('agent socket error', d));
+    // activeSession is kept so a Send attempt still reaches the server and its
+    // rejection is visible — that guard is the thing under test.
+    agentSocket.on('session_ended', () => {
+      sysMsg('a-chat', 'The user ended this chat. The handoff was cancelled.');
+      document.getElementById('a-status-label').textContent = 'ended';
+    });
+
+    agentSocket.on('error', (d) => {
+      console.error('agent socket error', d);
+      sysMsg('a-chat', `<span style="color:var(--color-danger);">error: ${esc(d.message || d)}</span>`);
+    });
   }
 
   function agentAccept() {
@@ -1108,16 +978,10 @@
   function agentSend() {
     if (!agentSocket || !activeSession) return;
     const message = document.getElementById('a-message').value.trim();
-    if (!message && !agentAttachment) return;
-    const attachments = agentAttachment ? [agentAttachment] : [];
-    agentSocket.emit('agent_message', {
-      session_id: activeSession.sessionId,
-      message,
-      attachments,
-    });
-    addChat('a-chat', 'agent', 'You', message, null, attachments);
+    if (!message) return;
+    agentSocket.emit('agent_message', { session_id: activeSession.sessionId, message });
+    addChat('a-chat', 'agent', 'You', message);
     document.getElementById('a-message').value = '';
-    clearAttachment('agent');
   }
 
   function agentResolve() {

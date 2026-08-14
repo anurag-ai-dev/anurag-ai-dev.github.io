@@ -27,7 +27,11 @@ Every handoff event includes a `status` field so the frontend always knows the c
 | `new`  | User requested handoff, waiting for agent | `request_agent_handoff` |
 | `in_progress` | Agent has joined the session | `join_handoff_session` |
 | `resolved` | Agent closed the conversation | `resolve_handoff` |
-| `cancelled` | User cancelled before agent joined | `cancel_handoff` |
+| `cancelled` | User cancelled before an agent joined, **or** the user ended the whole chat session while the handoff was still open | `cancel_handoff`, `end_chatbot_session` |
+
+**At most one live handoff per session.** A session can never have two handoffs in `new` or `in_progress` at the same time — the server rejects the second request (see Part 4 § 1). Across the life of a session there may well be several handoffs in sequence: once one is `resolved` or `cancelled`, the user can request a new agent and a new ticket is created.
+
+The session itself has a separate status (`active` / `ended`) that is **not** the handoff status. It appears only in the `session_ended` payload — see Part 4 § 7.
 
 
 ---
@@ -329,6 +333,15 @@ event: handoff_timeout
 
 Show "No agent is available right now. Please try again later." and re-enable the request button. The handoff record stays in the DB — it is not automatically retried.
 
+**Duplicate requests.** The server refuses to open a second handoff on a session that already has a live one. Two cases, and they answer differently:
+
+| Situation | Server responds with | What the frontend should do |
+|-----------|----------------------|-----------------------------|
+| A request is already pending (within the 45s window) | `handoff_triggered`, `status: "new"`, message "A handoff request is already pending. An agent will be with you shortly." | Restore the waiting state. Identical payload shape to the first response, so the same handler works — no special case needed. |
+| An agent has already joined | `error`, message "An agent is already connected to this session" | Show the in-handoff state. Reaching this means the UI lost track of the handoff — recover rather than surfacing a raw error. |
+
+After a `handoff_timeout`, the pending lock expires and the user may request again. That retry re-uses the same handoff record and re-notifies Laravel; it does not create a second ticket.
+
 ### 2. Cancel a pending handoff
 
 Emitted when the user changes their mind before an agent joins. This cancels the pending handoff request and emits a user-only confirmation event.
@@ -409,6 +422,51 @@ event: handoff_resolved
 }
 ```
 
+### 7. End the chat session
+
+Emitted when the user closes the conversation for good. This is **not** the same as the socket disconnecting: closing the tab or losing signal does *not* end a session. Only this event does.
+
+```
+emit: end_chatbot_session
+{
+  "session_id": "uuid"
+}
+```
+
+Ending a session while a handoff is still open **cancels that handoff**, and the agent can no longer reply.
+
+**Receive (broadcast to room):** both the user and the agent get this.
+
+```
+event: session_ended
+{
+  "session_id": "uuid",
+  "status": "ended",            // the SESSION status, not the handoff status
+  "handoff_cancelled": true     // true if a live handoff was cancelled by this
+}
+```
+
+**What the frontend should do**
+
+The user widget closes on end, so there is nothing to render on that side. The two things that do matter:
+
+* **Agent console** — close the conversation view and return the agent to the queue, the same treatment as `handoff_resolved`, worded so it is clear the user left rather than the agent closing it. Do **not** call `resolve_handoff` afterwards; the handoff is already `cancelled` and resolving it fails with "No active handoff for this session".
+* **Stored session ids** — an ended `session_id` is dead. If the widget persists one for reconnects, drop it here, or the next visit will rejoin a session it cannot send to. A new conversation means `join_chatbot_session` with `chatbot_id` only.
+
+**After a session ends**, the server rejects further activity on it. Each of these comes back as an `error` with the message "This session has ended":
+
+| Event | Sent by |
+|-------|---------|
+| `chatbot_message` | User |
+| `agent_message` | Agent |
+| `request_agent_handoff` | User |
+
+Treat that message as terminal, not as a retryable failure — a client seeing it has stale state.
+
+**Errors on `end_chatbot_session` itself:** `Session already ended` (duplicate emit — safe to ignore), `Session not found`, and `Not authorized. Call join_chatbot_session first.` if the socket never joined the room.
+
+**Laravel** receives the `handoff.cancelled` webhook (Part 2) when a live handoff is cancelled this way, so the queue drops the ticket without an agent having to touch it. No webhook fires if the session had no open handoff.
+
 
 ---
 
@@ -426,9 +484,11 @@ event: handoff_resolved
 | `handoff_resolved` | Server → Room | Agent + User | `resolved`     |
 | `request_agent_handoff` | User → Server | —           | —              |
 | `cancel_handoff` | User → Server | —           | —              |
+| `end_chatbot_session` | User → Server | —           | —              |
 | `handoff_triggered` | Server → User | User only   | `new`          |
 | `handoff_cancelled` | Server → User | User only   | `cancelled`    |
 | `handoff_timeout` | Server → User | User only   | —              |
+| `session_ended` | Server → Room | Agent + User | `ended` (session) |
 
 **Room:** all events broadcast to the room use the plain `session_id` UUID as the room name.
 
