@@ -102,7 +102,8 @@ When `chatbot_id` is used, store the returned `session_id` for all subsequent ev
 emit: chatbot_message
 {
   "session_id": "uuid",
-  "message": "string"
+  "message": "string",
+  "attachments": [...]   // optional - only during active handoff, see Attachment Flow
 }
 ```
 
@@ -128,6 +129,7 @@ event: chatbot_response
   "session_id": "uuid",
   "response": "string",           // full assembled response
   "is_casual": false,
+  "confidence_tier": "high" | "medium" | "low" | null,
   "confidence_score": 0.82,       // 0.0–1.0; null for casual turns
   "citations": [...] | null,
   "handoff_triggered": true | false | null   // null on casual turns.
@@ -202,6 +204,15 @@ event: handoff_joined
       "role": "client" | "assistant" | "agent",
       "content": "string",
       "timestamp": "iso8601",
+      "attachments": [                          // null when the message has none, see Attachment Flow
+        {
+          "id": "string",
+          "name": "string",
+          "size": 0,
+          "type": "string",
+          "url": "string"
+        }
+      ] | null,
       "citations": [                          // null for client/agent messages and casual turns
         {
           "data_source_id": "uuid | null",
@@ -219,6 +230,7 @@ event: handoff_joined
 ```
 
 `citations` and `confidence_score` are only populated for non-casual `role: "assistant"` messages. Both are `null` for `client` and `agent` messages, casual assistant turns, and assistant messages where the async accuracy backfill has not yet completed.
+`attachments` may appear on any role — both the user and the agent can attach files during a handoff.
 
 **Receive (broadcast to the whole room):** sent at the same time as `handoff_joined` — this is what the user sees to know an agent has arrived.
 
@@ -234,13 +246,15 @@ event: handoff_accepted
 
 ### 2. Send a message
 
-Sent each time the agent types a reply. The server saves the message to the DB and broadcasts it to the room.
+Sent each time the agent types a reply. The server saves the message to the DB and broadcasts it to the room. The agent may include files in `attachments` (see Attachment Flow).
 
 ```
 emit: agent_message
 {
   "session_id": "uuid",
-  "message": "string"
+  "agent_id": "uuid",    // must be agents.id — returned in handoff_joined even if you joined via user_id
+  "message": "string",
+  "attachments": [...]   // optional
 }
 ```
 
@@ -254,7 +268,8 @@ event: agent_message_received
   "session_id": "uuid",
   "agent_id": "uuid",
   "message": "string",
-  "timestamp": "iso8601"
+  "timestamp": "iso8601",
+  "attachments": [...] | null
 }
 ```
 
@@ -267,7 +282,8 @@ event: user_message_received
 {
   "session_id": "uuid",
   "message": "string",
-  "timestamp": "iso8601"
+  "timestamp": "iso8601",
+  "attachments": [...] | null
 }
 ```
 
@@ -406,7 +422,8 @@ event: agent_message_received
   "session_id": "uuid",
   "agent_id": "uuid",
   "message": "string",
-  "timestamp": "iso8601"
+  "timestamp": "iso8601",
+  "attachments": [...] | null
 }
 ```
 
@@ -466,6 +483,46 @@ Treat that message as terminal, not as a retryable failure — a client seeing i
 **Errors on `end_chatbot_session` itself:** `Session already ended` (duplicate emit — safe to ignore), `Session not found`, and `Not authorized. Call join_chatbot_session first.` if the socket never joined the room.
 
 **Laravel** receives the `handoff.cancelled` webhook (Part 2) when a live handoff is cancelled this way, so the queue drops the ticket without an agent having to touch it. No webhook fires if the session had no open handoff.
+
+
+---
+
+## Attachment Flow
+
+File sharing is only available **during an active handoff** (`status: in_progress`). A user cannot attach files while talking to the bot — the server rejects `attachments` on `chatbot_message` with the error `"attachments are only supported during handoff"` unless the handoff is in progress.
+
+During the handoff both sides attach files by adding an `attachments` array to the same messages they already send:
+
+| Sender | Emits | Same payload as |
+|--------|-------|-----------------|
+| User   | `chatbot_message` + `attachments` | Part 1, §2      |
+| Agent  | `agent_message` + `attachments` | Part 3, §2      |
+
+Each element is:
+
+```
+{
+  "id": "string",      // client-generated attachment ID, echoed back as-is
+  "name": "string",    // filename
+  "size": 0,           // file size in bytes
+  "type": "string",    // MIME type
+  "url": "string"      // URL to the file
+}
+```
+
+Flow:
+
+
+1. Sender includes `attachments` on their message emit. `message` may be empty if only files are sent — the server requires at least one of the two.
+2. FastAPI stores the message (as `client` or `agent` role) and writes each attachment to the `chatbot_session_message_attachments` table, keyed by the message ID. The server never downloads or validates the file contents — it only persists the metadata the client sent.
+3. The broadcast event (`user_message_received` for the user, `agent_message_received` for the agent) carries the same `attachments` array so the other side can render the files. Both sides receive every broadcast, so each side sees its own upload echoed back.
+4. Attachments are also persisted in history. The `handoff_joined` event (Part 3, §1) includes `attachments` per history message — `null` when a message has none. `citations` and `confidence_score` remain `null` for `client`/`agent` messages regardless of attachments.
+
+Notes:
+
+* Attachments are metadata only — no upload endpoint is involved. Whoever sends files is responsible for hosting them and providing `url`.
+* Attachments do not appear in `chatbot_response`/`chatbot_token`; they only flow through the handoff events listed above.
+* The attachment fields map to the `Attachment` schema (`schemas/chat/attachment.py`); validation failures produce the same error event as other invalid payloads.
 
 
 ---
