@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Handoff Test Client</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-base: #09090b;
+      --bg-panel: #18181b;
+      --bg-input: #27272a;
+      --border-color: #27272a;
+      --border-focus: #3f3f46;
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+      
+      --color-user: #10b981;
+      --color-user-bg: #064e3b;
+      
+      --color-agent: #6366f1;
+      --color-agent-bg: #312e81;
+      
+      --color-laravel: #f59e0b;
+      --color-laravel-bg: #78350f;
+
+      --color-danger: #ef4444;
+      --color-danger-bg: #7f1d1d;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px; 
+      background: var(--bg-base); 
+      color: var(--text-main);
+      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── login screen ── */
+    #login-screen {
+      position: fixed; inset: 0; background: rgba(9, 9, 11, 0.85);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center; z-index: 100;
+    }
+    #login-box {
+      background: var(--bg-panel); border: 1px solid var(--border-color); 
+      border-radius: 16px; padding: 40px; display: flex; flex-direction: column; 
+      gap: 16px; width: 360px; box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+    #login-box .login-title { font-size: 20px; font-weight: 600; color: var(--text-main); letter-spacing: -0.02em; }
+    #login-box .login-sub   { font-size: 13px; color: var(--text-muted); margin-top: -8px; }
+    #login-box input {
+      background: var(--bg-input); border: 1px solid transparent; color: var(--text-main);
+      padding: 12px 14px; border-radius: 10px; font-size: 14px; outline: none;
+      transition: all 0.2s ease;
+    }
+    #login-box input:focus { border-color: var(--color-user); background: var(--bg-panel); }
+    #login-box .login-btn {
+      padding: 12px; background: var(--text-main); color: var(--bg-base);
+      border: none; border-radius: 10px; cursor: pointer; font-size: 14px;
+      font-weight: 600; transition: all 0.2s ease; margin-top: 8px;
+    }
+    #login-box .login-btn:hover { background: #d4d4d8; transform: translateY(-1px); }
+    #login-box .login-err { font-size: 12px; color: var(--color-danger); display: none; margin-top: -4px; }
+
+    /* ── config bar ── */
+    #config {
+      padding: 12px 20px; background: var(--bg-panel); border-bottom: 1px solid var(--border-color);
+      display: flex; gap: 16px; align-items: center; flex-shrink: 0;
+    }
+    #config label { color: var(--text-muted); font-size: 12px; font-weight: 500; }
+    #config input {
+      background: var(--bg-input); border: 1px solid transparent; color: var(--text-main);
+      padding: 6px 12px; border-radius: 6px; font-family: monospace; font-size: 12px;
+      transition: border-color 0.2s;
+    }
+    #config input:focus { border-color: var(--border-focus); outline: none; }
+    #config input[name="server"] { width: 220px; }
+    #config input[name="key"]    { width: 240px; }
+    #user-chip {
+      margin-left: auto; font-size: 12px; color: var(--color-user); font-weight: 500;
+      background: var(--color-user-bg); border: 1px solid rgba(16, 185, 129, 0.2);
+      padding: 4px 12px; border-radius: 20px;
+    }
+
+    /* ── panels ── */
+    #panels { display: flex; flex: 1; overflow: hidden; padding: 16px; gap: 16px; }
+    .panel  { 
+      flex: 1; display: flex; flex-direction: column; 
+      background: var(--bg-panel); border: 1px solid var(--border-color); 
+      border-radius: 12px; overflow: hidden;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .panel-header {
+      padding: 14px 16px; font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0;
+      border-bottom: 1px solid var(--border-color); background: rgba(255,255,255,0.02);
+    }
+    #user-panel    .panel-header { color: var(--color-user); }
+    #laravel-panel .panel-header { color: var(--color-laravel); }
+    #agent-panel   .panel-header { color: var(--color-agent); }
+
+    .panel-body { display: flex; flex-direction: column; flex: 1; overflow: hidden; padding: 16px; gap: 12px; }
+
+    /* ── form elements ── */
+    .section { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+    .row     { display: flex; gap: 10px; align-items: center; }
+    .row label { color: var(--text-muted); font-size: 12px; width: 60px; flex-shrink: 0; font-weight: 500; }
+
+    input[type="text"] {
+      background: var(--bg-input); border: 1px solid transparent; color: var(--text-main);
+      padding: 8px 12px; border-radius: 8px; font-size: 13px; flex: 1;
+      transition: all 0.2s ease;
+    }
+    input[type="text"]::placeholder { color: #52525b; }
+    input[type="text"]:focus { outline: none; border-color: var(--border-focus); background: var(--bg-base); }
+
+    select {
+      background: var(--bg-input); border: 1px solid transparent; color: var(--text-main);
+      padding: 8px 10px; border-radius: 8px; font-size: 12px; flex: 1; outline: none;
+      cursor: pointer;
+    }
+
+    button {
+      padding: 8px 16px; border-radius: 8px; border: none;
+      cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+    button:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
+    button:active:not(:disabled) { transform: translateY(0); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn-user    { background: var(--color-user); color: #000; }
+    .btn-agent   { background: var(--color-agent); color: #fff; }
+    .btn-laravel { background: var(--color-laravel); color: #000; }
+    .btn-danger  { background: var(--color-danger); color: #fff; }
+    .btn-warn    { background: var(--bg-input); border: 1px solid var(--border-focus); color: var(--text-main); }
+
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #3f3f46; flex-shrink: 0; transition: background 0.3s; }
+    .status-dot.connected { background: var(--color-user); box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+
+    /* ── chat area ── */
+    .chat-area {
+      flex: 1; overflow-y: auto; background: var(--bg-base);
+      border: 1px solid var(--border-color); border-radius: 10px;
+      padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0;
+    }
+    .chat-msg { display: flex; flex-direction: column; gap: 4px; max-width: 85%; align-items: flex-start; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .chat-msg .cm-meta { font-size: 11px; color: var(--text-muted); padding: 0 4px; font-weight: 500; }
+    .chat-msg .cm-text {
+      padding: 10px 14px; border-radius: 14px; font-size: 13px;
+      line-height: 1.5; word-break: break-word; border: 1px solid transparent;
+    }
+
+    .chat-msg.user-out  { align-self: flex-end; align-items: flex-end; }
+    .chat-msg.user-out  .cm-text { background: var(--color-user-bg); color: #a7f3d0; border-radius: 14px 14px 2px 14px; }
+    
+    .chat-msg.bot       .cm-text { background: var(--bg-input); color: var(--text-main); border-radius: 14px 14px 14px 2px; }
+    
+    .chat-msg.agent-in  .cm-text { background: var(--color-agent-bg); color: #c7d2fe; border-radius: 14px 14px 14px 2px; }
+    
+    .chat-msg.client    .cm-text { background: var(--bg-input); color: var(--text-main); border-radius: 14px 14px 14px 2px; }
+    
+    .chat-msg.agent     { align-self: flex-end; align-items: flex-end; }
+    .chat-msg.agent     .cm-text { background: var(--color-agent-bg); color: #c7d2fe; border-radius: 14px 14px 2px 14px; }
+    
+    .chat-msg.assistant .cm-text { background: var(--bg-input); color: var(--text-main); border-radius: 14px 14px 14px 2px; opacity: 0.8; }
+    
+    .chat-msg.system-msg         { align-self: center; max-width: 100%; }
+    .chat-msg.system-msg .cm-text {
+      background: transparent; border: none; padding: 4px;
+      color: var(--text-muted); font-size: 12px; text-align: center; font-weight: 500;
+    }
+
+    .chat-input-row { display: flex; gap: 8px; flex-shrink: 0; margin-top: 4px; }
+
+    /* ── agent incoming card ── */
+    #a-incoming {
+      display: none; padding: 16px; background: rgba(99, 102, 241, 0.05);
+      border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 10px;
+      flex-direction: column; gap: 10px; flex-shrink: 0;
+    }
+    #a-incoming.visible { display: flex; animation: fadeIn 0.3s ease; }
+    .incoming-label  { font-size: 11px; font-weight: 700; color: var(--color-agent); text-transform: uppercase; letter-spacing: 0.05em; }
+    .incoming-detail { font-size: 14px; color: var(--text-main); font-weight: 500; }
+    .incoming-sub    { font-size: 12px; color: var(--text-muted); }
+
+    /* ── laravel queue ── */
+    .handoff-queue { display: flex; flex-direction: column; gap: 8px; max-height: 180px; overflow-y: auto; padding-right: 4px; }
+    .handoff-card {
+      padding: 12px; background: var(--bg-base); border: 1px solid var(--border-color); border-radius: 8px;
+      display: flex; flex-direction: column; gap: 6px; transition: border-color 0.2s;
+    }
+    .handoff-card:hover { border-color: rgba(245, 158, 11, 0.3); }
+    .hc-name    { font-size: 13px; color: var(--color-laravel); font-weight: 600; }
+    .hc-session { font-family: monospace; font-size: 11px; color: var(--text-muted); }
+    .hc-meta    { font-size: 11px; color: #52525b; }
+    .hc-row     { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+
+    .agent-list  { display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; padding-right: 4px; }
+    .agent-item  { 
+      padding: 8px 12px; background: var(--bg-base); border: 1px solid var(--border-color); 
+      border-radius: 6px; font-size: 12px; color: var(--text-main); display: flex; align-items: center; gap: 8px;
+    }
+    .agent-item::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-agent); }
+
+    .divider { border-top: 1px solid var(--border-color); flex-shrink: 0; margin: 4px 0; }
+    .muted   { color: var(--text-muted); font-size: 12px; }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+    /* ── voice section ── */
+    #voice-section {
+      display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
+      padding-top: 12px; border-top: 1px solid var(--border-color);
+    }
+    .voice-row { display: flex; align-items: center; gap: 10px; }
+    #mic-btn {
+      width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+      background: var(--bg-input); border: 1px solid var(--border-focus);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all 0.2s ease; touch-action: none; user-select: none;
+    }
+    #mic-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    #mic-btn.active { background: var(--color-danger); border-color: var(--color-danger); transform: scale(1.1); }
+    #mic-btn svg { width: 20px; height: 20px; color: var(--text-main); }
+    #voice-status { font-size: 12px; color: var(--text-muted); }
+
+    /* ── summary card ── */
+    .summary-card {
+      padding: 14px; background: var(--bg-base);
+      border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 10px;
+      display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
+      animation: fadeIn 0.3s ease;
+    }
+    .summary-card-header {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;
+    }
+    .summary-card-title { font-size: 11px; font-weight: 700; color: var(--color-agent); text-transform: uppercase; letter-spacing: 0.05em; }
+    .summary-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+    }
+    .badge-positive  { background: rgba(16,185,129,0.15); color: #10b981; }
+    .badge-neutral   { background: rgba(245,158,11,0.15);  color: #f59e0b; }
+    .badge-negative  { background: rgba(239,68,68,0.15);   color: #ef4444; }
+    .badge-topic     { background: rgba(99,102,241,0.15);  color: #818cf8; }
+    .summary-text    { font-size: 13px; color: var(--text-main); line-height: 1.55; }
+    .summary-text-ja { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
+
+    /* ── streaming cursor ── */
+    .stream-cursor {
+      display: inline-block; width: 2px; height: 0.9em;
+      background: currentColor; margin-left: 2px; vertical-align: text-bottom;
+      animation: blink 0.9s step-end infinite;
+    }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* ── citations ── */
+    .citations { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .citation-link {
+      font-size: 11px; padding: 2px 8px; border-radius: 10px;
+      background: rgba(99,102,241,0.12); color: #818cf8;
+      text-decoration: none; border: 1px solid rgba(99,102,241,0.2);
+      transition: background 0.15s;
+    }
+    a.citation-link:hover { background: rgba(99,102,241,0.22); }
+
+    /* ── confidence badge ── */
+    .conf-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .conf-badge {
+      font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 8px;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .conf-high   { background: rgba(16,185,129,0.15); color: #10b981; }
+    .conf-medium { background: rgba(245,158,11,0.15);  color: #f59e0b; }
+    .conf-low    { background: rgba(239,68,68,0.15);   color: #ef4444; }
+    .conf-score  { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div id="login-box">
+    <div class="login-title">Subsidy Support ChatBot</div>
+    <div class="login-sub">Enter your credentials to start a subsidy chatbot session</div>
+    <input type="text" id="login-server" placeholder="Server URL" value="https://ai.dev.biz-japan.com/" />
+    <input type="text" id="login-key" placeholder="X-Shared-Key" value="base64:MtHJaOCsLvDvayp6S7SYp4ErE0czDQT+cO9cG0OeE+w=" />
+    <input type="text" id="login-pat" placeholder="Agent Sanctum PAT (1|abc123…)" style="font-family:monospace;" />
+    <input type="text" id="login-chatbot-id" placeholder="Chatbot ID (UUID)" value="330a2c64-9904-49d6-b836-c653f90d3675"
+           onkeydown="if(event.key==='Enter') doLogin()" style="font-family:monospace;" />
+    <button class="login-btn" onclick="doLogin()">Start Chat</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<div id="config">
+  <label>Server</label>
+  <input type="text" name="server" placeholder="Server URL" value="https://ai.dev.biz-japan.com/" />
+  <label>Key</label>
+  <input type="text" name="key" placeholder="X-Shared-Key" value="base64:MtHJaOCsLvDvayp6S7SYp4ErE0czDQT+cO9cG0OeE+w=" />
+  <label>PAT</label>
+  <input type="text" name="pat" placeholder="1|abc123… (agent Sanctum PAT)" style="font-family:monospace;" />
+  <div id="user-chip" style="display:none;"></div>
+  <span style="color:#52525b; font-size:12px; margin-left:4px;">serve via HTTP, not file://</span>
+</div>
+
+<div id="panels">
+
+  <div class="panel" id="user-panel">
+    <div class="panel-header">User</div>
+    <div class="panel-body">
+      <div class="section">
+        <div class="row">
+          <label>Socket</label>
+          <div class="status-dot" id="u-dot"></div>
+          <button class="btn-user" id="u-connect-btn" onclick="toggleUserSocket()" disabled>Connect</button>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="chat-area" id="u-chat">
+        <div class="chat-msg system-msg"><div class="cm-text">Logging in…</div></div>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" id="u-message" placeholder="Type a message…" onkeydown="if(event.key==='Enter') userSend()" />
+        <button class="btn-user" id="u-send-btn" onclick="userSend()" disabled>Send</button>
+        <button class="btn-warn" id="u-handoff-btn" onclick="userRequestHandoff()" disabled>Agent</button>
+        <button class="btn-danger" id="u-end-btn" onclick="userEndSession()" disabled>End</button>
+      </div>
+
+      <div id="voice-section">
+        <div class="voice-row">
+          <button id="mic-btn" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 10a7 7 0 01-14 0M12 19v4m-4 0h8" />
+            </svg>
+          </button>
+          <span id="voice-status">hold to speak</span>
+          <button class="btn-user" id="voice-toggle-btn" onclick="toggleVoiceConnection()" style="display:none; margin-left:auto;">Connect RTC</button>
+        </div>
+        <audio id="agent-audio" autoplay playsinline style="display:none;"></audio>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="laravel-panel">
+    <div class="panel-header">Laravel dispatcher</div>
+    <div class="panel-body">
+      <div class="section">
+        <div class="row">
+          <label></label>
+          <button class="btn-laravel" onclick="laravelRefresh()">Refresh</button>
+          <span class="muted" style="margin-left:8px;">auto on handoff</span>
+        </div>
+      </div>
+      <div id="l-notify" style="display:none; padding:12px; background:var(--color-laravel-bg); border:1px solid rgba(245,158,11,0.2); border-radius:8px; color:#fcd34d; font-size:13px; font-weight:500;"></div>
+      <div id="l-summary" style="display:none;" class="summary-card">
+        <div class="summary-card-header">
+          <span class="summary-card-title">Session Summary</span>
+          <div class="summary-badges" id="l-summary-badges"></div>
+        </div>
+        <div class="summary-text"    id="l-summary-en"></div>
+        <div class="summary-text-ja" id="l-summary-ja"></div>
+      </div>
+      <div class="divider"></div>
+      <div class="section">
+        <div class="row" style="margin-bottom:4px;">
+          <label>Pending</label>
+          <span id="l-handoff-count" class="muted">—</span>
+        </div>
+        <div class="handoff-queue" id="l-handoff-queue">
+          <div class="muted" style="padding:4px 8px;">Refresh to load</div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="section">
+        <div class="row" style="margin-bottom:4px;">
+          <label>Agents</label>
+          <span id="l-agent-count" class="muted">—</span>
+        </div>
+        <div class="agent-list" id="l-agent-list">
+          <div class="muted" style="padding:4px 8px;">Refresh to load</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="agent-panel">
+    <div class="panel-header">Agent</div>
+    <div class="panel-body">
+      <div class="section">
+        <div class="row">
+          <label>Socket</label>
+          <div class="status-dot" id="a-dot"></div>
+          <span id="a-status-label" class="muted">offline</span>
+        </div>
+      </div>
+      <div class="divider"></div>
+
+      <div class="divider"></div>
+
+      <div id="a-incoming">
+        <div class="incoming-label">Incoming handoff</div>
+        <div class="incoming-detail" id="a-incoming-name"></div>
+        <div class="incoming-sub"   id="a-incoming-session"></div>
+        <div id="a-summary-badges" class="summary-badges" style="margin-top:4px;"></div>
+        <div id="a-summary-text"   class="summary-text-ja" style="display:none;"></div>
+        <div style="margin-top:4px;"><button class="btn-agent" id="a-accept-btn" onclick="agentAccept()">Accept Chat</button></div>
+      </div>
+
+      <div id="a-chat-section" style="display:none; flex-direction:column; flex:1; gap:12px; overflow:hidden; min-height:0;">
+        <div class="chat-area" id="a-chat"></div>
+        <div class="chat-input-row">
+          <input type="text" id="a-message" placeholder="Type a reply…" onkeydown="if(event.key==='Enter') agentSend()" />
+          <button class="btn-agent"  onclick="agentSend()">Send</button>
+          <button class="btn-danger" onclick="agentResolve()">Resolve</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ── helpers ─────────────────────────────────────────────────────────────────
+
+  function cfg(name) { return document.querySelector(`#config input[name="${name}"]`).value.trim(); }
+  function ts()      { return new Date().toTimeString().slice(0, 8); }
+
+  function addChat(chatId, cls, label, text, time) {
+    const chat = document.getElementById(chatId);
+    const t = time
+      ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : ts();
+    const msg = document.createElement('div');
+    msg.className = `chat-msg ${cls}`;
+    msg.innerHTML = `<div class="cm-meta">${label} · ${t}</div><div class="cm-text">${esc(text)}</div>`;
+    chat.appendChild(msg);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function sysMsg(chatId, text) {
+    const chat = document.getElementById(chatId);
+    const msg  = document.createElement('div');
+    msg.className = 'chat-msg system-msg';
+    msg.innerHTML = `<div class="cm-text">${text}</div>`;
+    chat.appendChild(msg);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── state ────────────────────────────────────────────────────────────────────
+
+  let chatbotId       = null;   // UUID of the chatbot; join_chatbot_session needs it every time
+  let sessionId       = null;
+  let userSocket      = null;
+  let agentSocket     = null;
+  let activeSession   = null;   // { sessionId, agentId }
+  let pendingAssign   = null;   // { sessionId, agentId, agentName, clientName }
+  let availableAgents = [];
+  let lastHandoffs    = [];
+  let streamingBubble = null;   // in-progress streaming message element
+
+  // ── LOGIN ────────────────────────────────────────────────────────────────────
+
+  function errMsg(text) {
+    const el = document.getElementById('login-err');
+    el.textContent = text;
+    el.style.display = text ? 'block' : 'none';
+  }
+
+  async function doLogin() {
+    const server    = document.getElementById('login-server').value.trim();
+    const key       = document.getElementById('login-key').value.trim();
+    const pat       = document.getElementById('login-pat').value.trim();
+    const botId     = document.getElementById('login-chatbot-id').value.trim();
+    const uuidRe   = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!server) { errMsg('Server URL is required.'); return; }
+    if (!key) { errMsg('API key is required.'); return; }
+    if (!pat) { errMsg('Agent PAT is required — the socket handshake validates it.'); return; }
+    if (!botId || !uuidRe.test(botId)) { errMsg('Enter a valid chatbot UUID.'); return; }
+
+    // Sync into the config bar so all subsequent calls use these values
+    document.querySelector('#config input[name="server"]').value = server;
+    document.querySelector('#config input[name="key"]').value = key;
+    document.querySelector('#config input[name="pat"]').value = pat;
+    chatbotId = botId;
+    sessionId = null;   // join_chatbot_session creates it and returns it
+    errMsg('');
+
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('u-chat').innerHTML = '';
+    _setUserSocketUI(false);
+    _setVoiceUI(false, 'Connect RTC', true);
+
+    userConnect();   // voice auto-connects once chatbot_session_joined yields a session_id
+  }
+
+  // ── USER ─────────────────────────────────────────────────────────────────────
+
+  function toggleUserSocket() {
+    if (userSocket && userSocket.connected) {
+      userDisconnect();
+      return;
+    }
+    userConnect();
+  }
+
+  function userConnect() {
+    if (!chatbotId || (userSocket && userSocket.connected)) return;
+    if (userSocket) {
+      userSocket.disconnect();
+      userSocket = null;
+    }
+
+    _setUserSocketUI(false, 'Connecting…', true);
+    const socket = io(cfg('server'), {
+      transports: ['websocket'],
+      reconnection: false,
+      auth: { token: cfg('pat') },
+    });
+    userSocket = socket;
+
+    socket.on('connect', () => {
+      if (userSocket !== socket) return;
+      document.getElementById('u-dot').classList.add('connected');
+      _setUserSocketUI(true);
+      // chatbot_id is always required; session_id only on rejoin
+      const payload = { chatbot_id: chatbotId };
+      if (sessionId) payload.session_id = sessionId;
+      socket.emit('join_chatbot_session', payload);
+    });
+
+    socket.on('connect_error', (e) => {
+      _setUserSocketUI(false);
+      sysMsg('u-chat', `Connection refused: ${e.message} — check the PAT.`);
+    });
+
+    socket.on('disconnect', () => {
+      if (userSocket === socket) userSocket = null;
+      _setUserSocketUI(false);
+      streamingBubble = null;
+    });
+
+    socket.on('chatbot_session_joined', (d) => {
+      const isFirstJoin = !sessionId;
+      sessionId = d.session_id;   // server-created on first join; every later event needs it
+      document.getElementById('user-chip').textContent = sessionId.slice(0, 8) + '…';
+      document.getElementById('user-chip').style.display = 'block';
+      document.getElementById('u-send-btn').disabled = false;
+      document.getElementById('u-handoff-btn').disabled = false;
+      document.getElementById('u-end-btn').disabled = false;
+      sysMsg('u-chat', `Connected${d.created ? ' (new session)' : ''}. How can we help?`);
+
+      if (isFirstJoin) {
+        voiceConnect().catch(e => {
+          setVoiceStatus(`voice unavailable: ${e.message}`);
+          console.error('Voice auto-connect failed', e);
+        });
+      }
+    });
+
+    socket.on('chatbot_token', (d) => {
+      if (voiceTurnInProgress) return;
+      const chat = document.getElementById('u-chat');
+      if (!streamingBubble) {
+        streamingBubble = document.createElement('div');
+        streamingBubble.className = 'chat-msg bot';
+        streamingBubble.innerHTML =
+          `<div class="cm-meta">Assistant · ${ts()}</div>` +
+          `<div class="cm-text"><span class="stream-text"></span><span class="stream-cursor"></span></div>`;
+        chat.appendChild(streamingBubble);
+      }
+      streamingBubble.querySelector('.stream-text').textContent += d.token;
+      chat.scrollTop = chat.scrollHeight;
+    });
+
+    socket.on('chatbot_response', (d) => {
+      if (voiceTurnInProgress) { voiceTurnInProgress = false; return; }
+      const chat = document.getElementById('u-chat');
+      let cmText;
+      if (streamingBubble) {
+        cmText = streamingBubble.querySelector('.cm-text');
+        cmText.innerHTML = esc(d.response);
+        streamingBubble = null;
+      } else {
+        const msg = document.createElement('div');
+        msg.className = 'chat-msg bot';
+        msg.innerHTML =
+          `<div class="cm-meta">Assistant · ${ts()}</div>` +
+          `<div class="cm-text">${esc(d.response)}</div>`;
+        chat.appendChild(msg);
+        cmText = msg.querySelector('.cm-text');
+      }
+      if (d.confidence_tier) {
+        const tier = d.confidence_tier.toLowerCase();
+        const pct  = d.confidence_score != null ? `${Math.round(d.confidence_score * 100)}%` : '';
+        const row  = document.createElement('div');
+        row.className = 'conf-row';
+        row.innerHTML =
+          `<span class="conf-badge conf-${tier}">${tier}</span>` +
+          (pct ? `<span class="conf-score">${pct}</span>` : '');
+        cmText.appendChild(row);
+      }
+      if (d.citations && d.citations.length) {
+        const citEl = document.createElement('div');
+        citEl.className = 'citations';
+        citEl.innerHTML = d.citations.map(c => c.source_url
+          ? `<a href="${esc(c.source_url)}" target="_blank" class="citation-link">${esc(c.source_label)}</a>`
+          : `<span class="citation-link">${esc(c.source_label)}</span>`
+        ).join('');
+        cmText.appendChild(citEl);
+      }
+      chat.scrollTop = chat.scrollHeight;
+      if (d.handoff_triggered) showHandoffSuggestion();
+    });
+
+    socket.on('handoff_triggered', (d) => {
+      document.getElementById('u-handoff-btn').disabled = true;
+      sysMsg('u-chat', 'Connecting you to an agent…');
+      if (d.client_name) {
+        const n = document.getElementById('l-notify');
+        n.textContent = `${d.client_name} is requesting to talk to an agent.`;
+        n.style.display = 'block';
+      }
+      laravelRefresh();
+      fetchSessionSummary(sessionId).then(renderLaravelSummary);
+    });
+
+    socket.on('handoff_accepted', (d) => {
+      sysMsg('u-chat', `${d.agent_name || 'An agent'} has joined the conversation.`);
+    });
+
+    socket.on('agent_message_received', (d) => {
+      addChat('u-chat', 'agent-in', d.agent_name || 'Agent', d.message);
+    });
+
+    socket.on('handoff_timeout', () => {
+      document.getElementById('u-handoff-btn').disabled = false;
+      sysMsg('u-chat', 'No agent is available right now. Please try again later.');
+    });
+
+    socket.on('handoff_resolved', () => {
+      document.getElementById('u-handoff-btn').disabled = false;
+      sysMsg('u-chat', 'Session with agent has ended.');
+    });
+
+    // Send stays enabled on purpose: the server-side rejection of a message on an
+    // ended session is the thing under test, so it must be reachable from the UI.
+    socket.on('session_ended', (d) => {
+      document.getElementById('u-end-btn').disabled = true;
+      sysMsg('u-chat', `Chat ended${d.handoff_cancelled ? ' — the handoff was cancelled.' : '.'}`);
+      laravelRefresh();
+    });
+
+    socket.on('error', (d) => {
+      console.error('user socket error', d);
+      sysMsg('u-chat', `<span style="color:var(--color-danger);">error: ${esc(d.message || d)}</span>`);
+    });
+  }
+
+  function userDisconnect() {
+    const socket = userSocket;
+    userSocket = null;
+    if (socket) socket.disconnect();
+    _setUserSocketUI(false);
+    streamingBubble = null;
+    sysMsg('u-chat', 'Socket disconnected.');
+  }
+
+  function showHandoffSuggestion() {
+    if (document.getElementById('u-handoff-suggestion')) return; // already showing
+    const chat = document.getElementById('u-chat');
+    const card = document.createElement('div');
+    card.id = 'u-handoff-suggestion';
+    card.className = 'chat-msg bot';
+    card.innerHTML = `
+      <div class="cm-meta">Assistant · ${ts()}</div>
+      <div class="cm-text" style="display:flex;flex-direction:column;gap:12px;">
+        <span>I may not have a complete answer for this. Would you like to speak with a human agent?</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-user" onclick="handoffAccept()" style="padding:6px 14px;font-size:12px;">Yes, connect me</button>
+          <button class="btn-warn" onclick="handoffDecline()" style="padding:6px 14px;font-size:12px;">No thanks</button>
+        </div>
+      </div>`;
+    chat.appendChild(card);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function handoffAccept() {
+    const card = document.getElementById('u-handoff-suggestion');
+    if (card) card.remove();
+    userRequestHandoff();
+  }
+
+  function handoffDecline() {
+    const card = document.getElementById('u-handoff-suggestion');
+    if (card) {
+      card.querySelector('div[style]').innerHTML = '<span style="color:var(--text-muted);font-style:italic;">Declined. Feel free to continue chatting.</span>';
+      setTimeout(() => { if (card.parentNode) card.remove(); }, 3000);
+    }
+  }
+
+  function userSend() {
+    const message = document.getElementById('u-message').value.trim();
+    if (!message || !userSocket || !sessionId) return;
+    const suggestion = document.getElementById('u-handoff-suggestion');
+    if (suggestion) suggestion.remove();
+    voiceTurnInProgress = false;
+    streamingBubble = null;
+    userSocket.emit('chatbot_message', { session_id: sessionId, message });
+    addChat('u-chat', 'user-out', 'You', message);
+    document.getElementById('u-message').value = '';
+  }
+
+  function userRequestHandoff() {
+    if (!sessionId || !userSocket) return;
+    userSocket.emit('request_agent_handoff', { session_id: sessionId });
+    document.getElementById('u-handoff-btn').disabled = true;
+  }
+
+  function userEndSession() {
+    if (!sessionId || !userSocket) return;
+    userSocket.emit('end_chatbot_session', { session_id: sessionId });
+  }
+
+  // ── SUMMARY ──────────────────────────────────────────────────────────────────
+
+  async function fetchSessionSummary(sid) {
+    try {
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/sessions/${sid}/summary`, {
+        headers: { 'X-Shared-Key': cfg('key') },
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch(e) {
+      console.error('fetch summary', e);
+      return null;
+    }
+  }
+
+  function sentimentBadgeClass(sentiment) {
+    if (sentiment === 'positive') return 'badge-positive';
+    if (sentiment === 'negative') return 'badge-negative';
+    return 'badge-neutral';
+  }
+
+  function renderLaravelSummary(data) {
+    if (!data) return;
+    document.getElementById('l-summary-en').textContent = data.summary || '—';
+    document.getElementById('l-summary-ja').textContent = data.summary_ja || '';
+    document.getElementById('l-summary-badges').innerHTML = `
+      <span class="badge ${sentimentBadgeClass(data.sentiment)}">${data.sentiment || '—'}</span>
+      <span class="badge badge-topic">${data.topic || '—'}</span>`;
+    document.getElementById('l-summary').style.display = 'block';
+  }
+
+  function renderAgentSummary(data) {
+    if (!data) return;
+    const text = document.getElementById('a-summary-text');
+    const badges = document.getElementById('a-summary-badges');
+    text.textContent = data.summary_ja || data.summary || '';
+    text.style.display = text.textContent ? 'block' : 'none';
+    badges.innerHTML = data.topic
+      ? `<span class="badge badge-topic">${data.topic}</span>
+         <span class="badge ${sentimentBadgeClass(data.sentiment)}">${data.sentiment}</span>`
+      : '';
+  }
+
+  // ── LARAVEL SIMULATOR ────────────────────────────────────────────────────────
+
+  async function laravelRefresh() {
+    await fetchAgents();
+    await fetchHandoffs();
+  }
+
+  async function fetchHandoffs() {
+    try {
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/handoffs?status=new`, {
+        headers: { 'X-Shared-Key': cfg('key') },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      lastHandoffs = data;
+      document.getElementById('l-handoff-count').textContent = `${data.length} pending`;
+      renderHandoffQueue(data);
+    } catch (e) {
+      console.error('fetch handoffs', e);
+    }
+  }
+
+  async function fetchAgents() {
+    try {
+      const res = await fetch(`${cfg('server')}/api/subsidy-chatbot/agents`, {
+        headers: { 'X-Shared-Key': cfg('key') },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      availableAgents = data;
+      document.getElementById('l-agent-count').textContent = `${data.length} available`;
+      renderAgentList(data);
+    } catch (e) {
+      console.error('fetch agents', e);
+    }
+  }
+
+  function renderHandoffQueue(items) {
+    const queue = document.getElementById('l-handoff-queue');
+    queue.innerHTML = '';
+    if (!items.length) {
+      queue.innerHTML = '<div class="muted" style="padding:4px 8px;">No pending handoffs</div>';
+      return;
+    }
+    items.forEach(item => {
+      const card    = document.createElement('div');
+      card.className = 'handoff-card';
+      const name    = item.client_name || null;
+      const short   = item.session_id.slice(0, 8) + '…';
+      const created = new Date(item.created_at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+      const opts    = availableAgents.length
+        ? availableAgents.map(a => `<option value="${a.user_id}">${a.name}</option>`).join('')
+        : '<option value="">No agents</option>';
+      card.innerHTML = `
+        ${name ? `<div class="hc-name">${esc(name)}</div>` : ''}
+        <div class="hc-session">${short}</div>
+        <div class="hc-meta">${created}</div>
+        <div class="hc-row">
+          <select id="sel-${item.session_id}">${opts}</select>
+          <button class="btn-laravel" onclick="assignAgent('${item.session_id}')" ${availableAgents.length?'':'disabled'}>Assign</button>
+        </div>`;
+      queue.appendChild(card);
+    });
+  }
+
+  function renderAgentList(agents) {
+    const list = document.getElementById('l-agent-list');
+    list.innerHTML = '';
+    if (!agents.length) {
+      list.innerHTML = '<div class="muted" style="padding:4px 8px;">No agents available</div>';
+      return;
+    }
+    agents.forEach(a => {
+      const el = document.createElement('div');
+      el.className = 'agent-item';
+      el.textContent = a.name;
+      list.appendChild(el);
+    });
+  }
+
+  function assignAgent(sid) {
+    const agentId   = document.getElementById(`sel-${sid}`).value;
+    if (!agentId) return;
+    const agent     = availableAgents.find(a => a.user_id === agentId);
+    const agentName = agent ? agent.name : agentId.slice(0,8) + '…';
+    const handoff   = lastHandoffs.find(h => h.session_id === sid);
+    const cName     = (handoff && handoff.client_name) || sid.slice(0,8) + '…';
+
+    pendingAssign = { sessionId: sid, agentId, agentName, clientName: cName };
+
+    document.getElementById('l-notify').style.display = 'none';
+    document.getElementById('a-incoming-name').textContent    = cName;
+    document.getElementById('a-incoming-session').textContent = `Session ${sid.slice(0,8)}…`;
+    document.getElementById('a-summary-text').style.display = 'none';
+    document.getElementById('a-summary-badges').innerHTML = '';
+    fetchSessionSummary(sid).then(renderAgentSummary);
+    document.getElementById('a-incoming').classList.add('visible');
+    document.getElementById('a-status-label').textContent = 'incoming…';
+  }
+
+  // ── AGENT ────────────────────────────────────────────────────────────────────
+
+  function agentConnect() {
+    if (agentSocket && agentSocket.connected) return;
+
+    agentSocket = io(cfg('server'), {
+      transports: ['websocket'],
+      auth: { token: cfg('pat') },
+    });
+
+    agentSocket.on('connect', () => {
+      document.getElementById('a-dot').classList.add('connected');
+      document.getElementById('a-status-label').textContent = pendingAssign ? 'incoming…' : 'waiting…';
+    });
+
+    agentSocket.on('disconnect', () => {
+      document.getElementById('a-dot').classList.remove('connected');
+      document.getElementById('a-status-label').textContent = 'offline';
+    });
+
+    agentSocket.on('handoff_joined', (d) => {
+      activeSession = { sessionId: d.session_id, agentId: d.agent_id };
+      pendingAssign = null;
+
+      document.getElementById('a-incoming').classList.remove('visible');
+      document.getElementById('a-accept-btn').disabled = false;
+      document.getElementById('a-chat').innerHTML = '';
+      document.getElementById('a-chat-section').style.display = 'flex';
+      document.getElementById('a-status-label').textContent = 'active';
+
+      if (!d.history.length) {
+        sysMsg('a-chat', 'No previous messages.');
+      } else {
+        sysMsg('a-chat', `— ${d.history.length} previous messages —`);
+        d.history.forEach(m => {
+          const cls   = m.role === 'client' ? 'client' : m.role === 'agent' ? 'agent' : 'assistant';
+          const label = m.role === 'client' ? 'User' : m.role === 'agent' ? 'Agent' : 'Bot';
+          addChat('a-chat', cls, label, m.content, m.timestamp);
+        });
+        sysMsg('a-chat', '— live session —');
+      }
+    });
+
+    agentSocket.on('handoff_accepted', () => {});
+
+    agentSocket.on('user_message_received', (d) => {
+      addChat('a-chat', 'client', pendingAssign?.clientName || 'User', d.message);
+    });
+
+    agentSocket.on('agent_message_received', () => { /* shown optimistically */ });
+
+    agentSocket.on('handoff_resolved', () => {
+      activeSession = null;
+      document.getElementById('a-chat-section').style.display = 'none';
+      document.getElementById('a-status-label').textContent = 'waiting…';
+    });
+
+    // activeSession is kept so a Send attempt still reaches the server and its
+    // rejection is visible — that guard is the thing under test.
+    agentSocket.on('session_ended', () => {
+      sysMsg('a-chat', 'The user ended this chat. The handoff was cancelled.');
+      document.getElementById('a-status-label').textContent = 'ended';
+    });
+
+    agentSocket.on('error', (d) => {
+      console.error('agent socket error', d);
+      sysMsg('a-chat', `<span style="color:var(--color-danger);">error: ${esc(d.message || d)}</span>`);
+    });
+  }
+
+  function agentAccept() {
+    if (!pendingAssign) return;
+    const token = cfg('pat');
+    if (!token) { alert('Enter the agent PAT in the config bar first.'); return; }
+    document.getElementById('a-accept-btn').disabled = true;
+    const { sessionId: sid } = pendingAssign;
+
+    const doJoin = () => {
+      agentSocket.emit('join_handoff_session', { session_id: sid, token });
+    };
+
+    if (agentSocket && agentSocket.connected) {
+      doJoin();
+    } else {
+      agentConnect();
+      agentSocket.once('connect', doJoin);
+    }
+  }
+
+  function agentSend() {
+    if (!agentSocket || !activeSession) return;
+    const message = document.getElementById('a-message').value.trim();
+    if (!message) return;
+    agentSocket.emit('agent_message', { session_id: activeSession.sessionId, message });
+    addChat('a-chat', 'agent', 'You', message);
+    document.getElementById('a-message').value = '';
+  }
+
+  function agentResolve() {
+    if (!agentSocket || !activeSession) return;
+    agentSocket.emit('resolve_handoff', { session_id: activeSession.sessionId });
+  }
+
+  // ── VOICE (LiveKit) ──────────────────────────────────────────────────────────
+
+  let voiceRoom       = null;
+  let voiceLocalTrack = null;
+  let voiceMicActive  = false;
+  let voiceRefreshTimer = null;
+  let voiceSignalParams = null;
+  let voiceAgentIdentity = null;
+  let voiceAgentBubble   = null;
+  let voiceAgentBuffer   = '';
+  let voiceTurnInProgress = false;
+
+  function _setToggleButton(btn, connected, connectedLabel, disconnectedLabel, disabled = false) {
+    btn.disabled = disabled;
+    btn.textContent = connected ? connectedLabel : disconnectedLabel;
+    btn.classList.toggle('btn-danger', connected);
+    btn.classList.toggle('btn-user', !connected);
+  }
+
+  function _setUserSocketUI(connected, label = null, disabled = false) {
+    const btn = document.getElementById('u-connect-btn');
+    const dot = document.getElementById('u-dot');
+    dot.classList.toggle('connected', connected);
+    _setToggleButton(btn, connected, 'Disconnect', label || 'Connect', disabled || !sessionId);
+    if (!connected) {
+      document.getElementById('u-send-btn').disabled = true;
+      document.getElementById('u-handoff-btn').disabled = true;
+    }
+  }
+
+  function _setVoiceUI(connected, label = null, disabled = false) {
+    const btn = document.getElementById('voice-toggle-btn');
+    const micBtn = document.getElementById('mic-btn');
+    btn.style.display = sessionId ? '' : 'none';
+    _setToggleButton(btn, connected, 'Disconnect RTC', label || 'Connect RTC', disabled || !sessionId);
+    micBtn.disabled = !connected;
+    if (!connected) micBtn.classList.remove('active');
+  }
+
+  function finishVoiceTurn() {
+    voiceTurnInProgress = false;
+  }
+
+  function setVoiceStatus(text) {
+    document.getElementById('voice-status').textContent = text;
+  }
+
+  function handleVoiceDataMessage(payload) {
+    let msg;
+    try { msg = JSON.parse(new TextDecoder().decode(payload)); } catch { return; }
+    switch (msg.type) {
+      case 'user_transcript':
+        addChat('u-chat', 'user-out', 'You (voice)', msg.text);
+        voiceAgentBubble = null; voiceAgentBuffer = '';
+        voiceTurnInProgress = true;
+        break;
+      case 'agent_text': {
+        const chat = document.getElementById('u-chat');
+        if (!voiceAgentBubble) {
+          voiceAgentBubble = document.createElement('div');
+          voiceAgentBubble.className = 'chat-msg bot';
+          voiceAgentBubble.innerHTML =
+            `<div class="cm-meta">Assistant (voice) · ${ts()}</div>` +
+            `<div class="cm-text"></div>`;
+          chat.appendChild(voiceAgentBubble);
+          voiceAgentBuffer = '';
+        }
+        if (msg.final) {
+          if (msg.text) voiceAgentBuffer = msg.text;
+          voiceAgentBubble.querySelector('.cm-text').textContent = voiceAgentBuffer;
+          voiceAgentBubble = null; voiceAgentBuffer = '';
+        } else {
+          voiceAgentBuffer += msg.text;
+          voiceAgentBubble.querySelector('.cm-text').textContent = voiceAgentBuffer;
+        }
+        chat.scrollTop = chat.scrollHeight;
+        break;
+      }
+      case 'chatbot_response': {
+        const chat = document.getElementById('u-chat');
+        const bubbles = chat.querySelectorAll('.chat-msg.bot .cm-text');
+        const cmText = bubbles.length ? bubbles[bubbles.length - 1] : null;
+        if (cmText && !msg.is_casual) {
+          if (msg.confidence_tier) {
+            const tier = msg.confidence_tier.toLowerCase();
+            const pct  = msg.confidence_score != null ? `${Math.round(msg.confidence_score * 100)}%` : '';
+            const row  = document.createElement('div');
+            row.className = 'conf-row';
+            row.innerHTML =
+              `<span class="conf-badge conf-${tier}">${tier}</span>` +
+              (pct ? `<span class="conf-score">${pct}</span>` : '');
+            cmText.appendChild(row);
+          }
+          if (msg.citations && msg.citations.length) {
+            const citEl = document.createElement('div');
+            citEl.className = 'citations';
+            citEl.innerHTML = msg.citations.map(c => c.source_url
+              ? `<a href="${esc(c.source_url)}" target="_blank" class="citation-link">${esc(c.source_label)}</a>`
+              : `<span class="citation-link">${esc(c.source_label)}</span>`
+            ).join('');
+            cmText.appendChild(citEl);
+          }
+        }
+        if (msg.handoff_triggered) showHandoffSuggestion();
+        finishVoiceTurn();
+        break;
+      }
+      case 'error':
+        finishVoiceTurn();
+        addChat('u-chat', 'bot', 'Voice error', msg.data?.message || 'Unknown error');
+        break;
+    }
+  }
+
+  function scheduleVoiceRefresh(ttl) {
+    clearTimeout(voiceRefreshTimer);
+    const delay = Math.max((ttl - 30) * 1000, 5000);
+    voiceRefreshTimer = setTimeout(async () => {
+      if (!voiceSignalParams || !voiceRoom) return;
+      try {
+        const res = await fetch(voiceSignalParams.refreshUrl, {
+          method: 'POST',
+          headers: voiceSignalParams.headers,
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        await voiceRoom.refreshToken?.(data.access_token);
+        scheduleVoiceRefresh(data.token_ttl_seconds);
+      } catch (e) {
+        console.warn('Voice token refresh failed', e);
+      }
+    }, delay);
+  }
+
+  async function _voiceEnsureConnected() {
+    if (voiceRoom && voiceRoom.state === LivekitClient.ConnectionState.Connected) return;
+    if (voiceRoom) {
+      try { await voiceRoom.disconnect(); } catch (_) {}
+      voiceRoom = null;
+    }
+
+    const headers = { 'X-Shared-Key': cfg('key'), 'Content-Type': 'application/json' };
+    voiceSignalParams = {
+      url: `${cfg('server')}/api/rtc/signal`,
+      refreshUrl: `${cfg('server')}/api/rtc/refresh`,
+      headers,
+    };
+
+    const res = await fetch(voiceSignalParams.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    const signalData = await res.json();
+
+    const room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+    voiceRoom = room;
+
+    room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
+      if (participant) {
+        if (!voiceAgentIdentity) voiceAgentIdentity = participant.identity;
+        else if (participant.identity !== voiceAgentIdentity) return;
+      }
+      handleVoiceDataMessage(payload);
+    });
+
+    room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === LivekitClient.Track.Kind.Audio) {
+        track.attach(document.getElementById('agent-audio'));
+      }
+    });
+
+    room.on(LivekitClient.RoomEvent.Disconnected, () => {
+      if (voiceRoom === room) voiceRoom = null;
+      voiceSignalParams = null;
+      voiceAgentIdentity = null;
+      setVoiceStatus('disconnected');
+      finishVoiceTurn();
+      _voiceCleanupUI();
+    });
+
+    room.on(LivekitClient.RoomEvent.Reconnecting, () => {
+      setVoiceStatus('reconnecting…');
+      _setVoiceUI(true, 'Disconnect RTC', true);
+    });
+    room.on(LivekitClient.RoomEvent.Reconnected,  () => {
+      setVoiceStatus('hold to speak');
+      _setVoiceUI(true);
+    });
+
+    await room.connect(signalData.livekit_url, signalData.access_token);
+    _setVoiceUI(true);
+    setVoiceStatus('hold to speak');
+    scheduleVoiceRefresh(signalData.token_ttl_seconds);
+    sysMsg('u-chat', 'Voice connected.');
+  }
+
+  async function voiceConnect() {
+    if (!sessionId) return;
+    _setVoiceUI(false, 'Connecting RTC…', true);
+    try {
+      await _voiceEnsureConnected();
+    } catch (e) {
+      _setVoiceUI(false);
+      throw e;
+    }
+  }
+
+  async function toggleVoiceConnection() {
+    if (voiceRoom && voiceRoom.state === LivekitClient.ConnectionState.Connected) {
+      await voiceDisconnect();
+      return;
+    }
+    try {
+      await voiceConnect();
+    } catch (e) {
+      setVoiceStatus(`voice unavailable: ${e.message}`);
+      console.error('Voice reconnect failed', e);
+    }
+  }
+
+  async function voiceStartMic() {
+    if (voiceMicActive || !voiceRoom) return;
+    document.getElementById('mic-btn').classList.add('active');
+    try {
+      voiceLocalTrack = await LivekitClient.createLocalAudioTrack({
+        echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+      });
+      await voiceRoom.localParticipant.publishTrack(voiceLocalTrack);
+      voiceMicActive = true;
+      setVoiceStatus('listening…');
+    } catch (e) {
+      console.error('Mic start error', e);
+      document.getElementById('mic-btn').classList.remove('active');
+      voiceLocalTrack = null; voiceMicActive = false;
+      setVoiceStatus('hold to speak');
+    }
+  }
+
+  async function voiceStopMic() {
+    if (!voiceLocalTrack || !voiceRoom || !voiceMicActive) return;
+    const track = voiceLocalTrack;
+    voiceLocalTrack = null; voiceMicActive = false;
+    document.getElementById('mic-btn').classList.remove('active');
+    setVoiceStatus('hold to speak');
+    try {
+      await voiceRoom.localParticipant.unpublishTrack(track);
+      track.stop();
+    } catch (e) {
+      console.error('Mic stop error', e);
+    }
+  }
+
+  async function voiceDisconnect() {
+    clearTimeout(voiceRefreshTimer);
+    if (voiceLocalTrack) { voiceLocalTrack.stop(); voiceLocalTrack = null; }
+    voiceMicActive = false;
+    if (voiceRoom) { await voiceRoom.disconnect(); voiceRoom = null; }
+    finishVoiceTurn();
+    voiceAgentIdentity = null; voiceSignalParams = null;
+    _voiceCleanupUI();
+    sysMsg('u-chat', 'Voice disconnected.');
+  }
+
+  function _voiceCleanupUI() {
+    clearTimeout(voiceRefreshTimer);
+    _setVoiceUI(false);
+    setVoiceStatus('not connected');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const micBtn = document.getElementById('mic-btn');
+    micBtn.addEventListener('mousedown',  (e) => { e.preventDefault(); voiceStartMic(); });
+    window.addEventListener('mouseup',    ()  => { if (voiceMicActive) voiceStopMic(); });
+    micBtn.addEventListener('touchstart', (e) => { e.preventDefault(); voiceStartMic(); }, { passive: false });
+    window.addEventListener('touchend',   ()  => { if (voiceMicActive) voiceStopMic(); });
+    window.addEventListener('touchcancel',()  => { if (voiceMicActive) voiceStopMic(); });
+  });
+</script>
+
+</body>
+</html>

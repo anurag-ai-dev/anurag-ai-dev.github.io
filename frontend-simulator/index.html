@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BizJapan chat simulator</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #dfe3e8;
+    --text: #1b1f24;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --ok: #15803d;
+    --warn: #b45309;
+    --err: #b91c1c;
+    --user: #e8f0fe;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1c2027; --border: #2c323b; --text: #e6e8eb;
+      --muted: #9aa4b2; --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24;
+      --err: #f87171; --user: #23324a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .grid {
+    display: grid; gap: 12px; padding: 12px;
+    grid-template-columns: 320px minmax(380px, 1fr) minmax(340px, 460px);
+    align-items: start;
+  }
+  @media (max-width: 1200px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; margin-bottom: 12px;
+  }
+  .card h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 10px;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+  input[type=text], input[type=password], textarea, select {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--text); font: inherit;
+  }
+  textarea { resize: vertical; font-family: inherit; }
+  button {
+    padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel); color: var(--text); font: inherit; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--err); }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 auto; }
+  .pill {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid var(--border); font-size: 11px; font-family: var(--mono);
+  }
+  .pill.on { color: var(--ok); border-color: var(--ok); }
+  .pill.off { color: var(--err); border-color: var(--err); }
+
+  #chat { height: 58vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 85%; padding: 8px 11px; border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
+  .msg.assistant { background: var(--bg); border: 1px solid var(--border); align-self: flex-start; }
+  .msg.user { background: var(--user); align-self: flex-end; }
+  .msg.system { align-self: center; font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .msg .meta { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
+
+  .bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+
+  ul.fields { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; font-size: 12px; }
+  ul.fields li { padding: 2px 0; display: flex; gap: 6px; }
+  ul.fields li span.k { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+  .done { color: var(--ok); }
+
+  #log { height: 260px; overflow-y: auto; font-family: var(--mono); font-size: 11px; }
+  #log div { padding: 2px 0; border-bottom: 1px solid var(--border); white-space: pre-wrap; word-break: break-all; }
+  #log .t { color: var(--muted); }
+  #log .in { color: var(--accent); }
+  #log .out { color: var(--ok); }
+  #log .er { color: var(--err); }
+
+  .section { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; }
+  .section > summary { padding: 6px 9px; cursor: pointer; font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  .section pre {
+    margin: 0; padding: 9px; border-top: 1px solid var(--border); max-height: 300px;
+    overflow: auto; font-family: var(--mono); font-size: 11px; white-space: pre-wrap;
+  }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BizJapan chat simulator</h1>
+  <span id="socketPill" class="pill off">socket: offline</span>
+  <span id="statusPill" class="pill">status: —</span>
+  <span id="reqPill" class="pill">request: —</span>
+</header>
+
+<div class="grid">
+
+  <!-- ── left column ─────────────────────────────────────────────── -->
+  <div>
+    <div class="card">
+      <h2>Connection</h2>
+      <label>Base URL</label>
+      <input id="baseUrl" type="text" placeholder="http://127.0.0.1:9090">
+      <label>Laravel PAT (Bearer / socket auth.token)</label>
+      <input id="pat" type="password" placeholder="1|abc...">
+      <label>Case ID</label>
+      <input id="caseId" type="text" placeholder="uuid">
+      <label>X-Shared-Key (optional — not used by /api/chat)</label>
+      <input id="sharedKey" type="password" placeholder="leave empty">
+      <div class="row" style="margin-top:10px">
+        <button id="btnStart" class="primary">Start / resume session</button>
+        <button id="btnDisconnect">Disconnect</button>
+      </div>
+      <div class="hint">POST /api/chat/ → socket connect → join_thread. Settings persist in localStorage.</div>
+    </div>
+
+    <div class="card">
+      <h2>Generation controls</h2>
+      <div class="row">
+        <button data-action="cancel" class="ctl danger">cancel</button>
+        <button data-action="continue" class="ctl">continue</button>
+        <button data-action="restart" class="ctl">restart</button>
+        <button data-action="regenerate" class="ctl">regenerate</button>
+      </div>
+      <div class="hint">POST /api/chat/control/{case_id}</div>
+    </div>
+
+    <div class="card">
+      <h2>Progress</h2>
+      <div class="bar"><div id="progBar"></div></div>
+      <div id="progLabel" class="hint">—</div>
+    </div>
+
+    <div class="card">
+      <h2>Fields <span id="fieldCount" class="pill">0 / 0</span></h2>
+      <ul id="fieldList" class="fields"></ul>
+    </div>
+  </div>
+
+  <!-- ── centre column ───────────────────────────────────────────── -->
+  <div>
+    <div class="card">
+      <h2>Conversation</h2>
+      <div id="chat"></div>
+      <label>Message</label>
+      <textarea id="msg" rows="3" placeholder="Type an answer, then Enter (Shift+Enter for a newline)"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="btnSend" class="primary">Send</button>
+        <button id="btnSendHttp">Send over HTTP</button>
+        <input id="file" type="file" style="flex:2 1 200px">
+        <button id="btnUpload">Upload + attach</button>
+      </div>
+      <div class="hint">
+        Socket <code>send_message</code> is the real frontend path. HTTP posts the same body to
+        /api/chat/message — replies still arrive over the socket.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── right column ────────────────────────────────────────────── -->
+  <div>
+    <div id="reviewCard" class="card hidden">
+      <h2>Review <span id="reviewKind" class="pill"></span></h2>
+      <div id="reviewTitle" style="font-weight:600;margin-bottom:8px"></div>
+      <div id="reviewBody"></div>
+      <label>Feedback (used when revising)</label>
+      <textarea id="feedback" rows="3" placeholder="例：コストの部分だけ金額の内訳を書いてください。"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="btnApprove" class="primary">Approve</button>
+        <button id="btnRevise">Revise selected</button>
+        <button id="btnHideReview">Hide</button>
+      </div>
+      <div class="hint" id="reviewHint"></div>
+    </div>
+
+    <div class="card">
+      <h2>Event log <button id="btnClearLog" style="float:right;padding:2px 8px">clear</button></h2>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const S = {
+  socket: null,
+  requestId: null,
+  labels: {},          // field key → JP label
+  collected: [],
+  remaining: [],
+  review: null,        // last content_ready_for_review payload
+  sections: {},        // section key → markdown (final review)
+  streamEl: null,      // bubble currently being filled by chat_token
+  streamCount: 0,
+  firstToken: null,
+  sentAt: 0,
+};
+
+/* ── settings ─────────────────────────────────────────────────────── */
+// localStorage throws (not returns null) when storage is blocked — on file:// URLs,
+// in private windows, or with third-party storage disabled. Never let it kill the page.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* not persisted */ } },
+};
+
+const SETTING_IDS = ['baseUrl', 'pat', 'caseId', 'sharedKey'];
+SETTING_IDS.forEach(id => {
+  $(id).value = store.get('sim.' + id) || '';
+  $(id).addEventListener('change', () => store.set('sim.' + id, $(id).value.trim()));
+});
+if (!$('baseUrl').value) $('baseUrl').value = 'http://127.0.0.1:9090';
+
+const cfg = () => ({
+  baseUrl: $('baseUrl').value.trim().replace(/\/$/, ''),
+  pat: $('pat').value.trim(),
+  caseId: $('caseId').value.trim(),
+  sharedKey: $('sharedKey').value.trim(),
+});
+
+/* ── logging ──────────────────────────────────────────────────────── */
+function log(kind, label, data) {
+  const el = document.createElement('div');
+  const t = new Date().toLocaleTimeString('en-GB');
+  const body = data === undefined ? '' : ' ' + JSON.stringify(data);
+  el.innerHTML = `<span class="t">${t}</span> <span class="${kind}">${label}</span>`;
+  el.append(body.length > 600 ? body.slice(0, 600) + '…' : body);
+  $('log').append(el);
+  $('log').scrollTop = $('log').scrollHeight;
+}
+$('btnClearLog').onclick = () => ($('log').innerHTML = '');
+
+/* ── chat rendering ───────────────────────────────────────────────── */
+function bubble(role, text, meta) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + role;
+  const body = document.createElement('span');
+  body.className = 'body';
+  body.textContent = text;
+  el.append(body);
+  if (meta) setMeta(el, meta);
+  $('chat').append(el);
+  $('chat').scrollTop = $('chat').scrollHeight;
+  return el;
+}
+
+function setMeta(el, text) {
+  let m = el.querySelector('.meta');
+  if (!m) {
+    m = document.createElement('div');
+    m.className = 'meta';
+    el.append(m);
+  }
+  m.textContent = text;
+}
+
+function setStatus(status) {
+  $('statusPill').textContent = 'status: ' + (status || '—');
+}
+
+function setFields(collected, remaining) {
+  if (Array.isArray(collected)) S.collected = collected;
+  if (Array.isArray(remaining)) S.remaining = remaining;
+  const list = $('fieldList');
+  list.innerHTML = '';
+  const render = (keys, done) => keys.forEach(k => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${done ? '✓' : '·'}</span>
+      <span class="${done ? 'done' : ''}">${S.labels[k] || k}</span>
+      <span class="k">${k}</span>`;
+    list.append(li);
+  });
+  render(S.collected, true);
+  render(S.remaining, false);
+  const total = S.collected.length + S.remaining.length;
+  $('fieldCount').textContent = `${S.collected.length} / ${total}`;
+}
+
+/* ── HTTP ─────────────────────────────────────────────────────────── */
+async function api(path, { method = 'POST', body, form } = {}) {
+  const c = cfg();
+  const headers = { Authorization: 'Bearer ' + c.pat };
+  if (c.sharedKey) headers['X-Shared-Key'] = c.sharedKey;
+  if (!form) headers['Content-Type'] = 'application/json';
+
+  log('out', 'HTTP ' + method + ' ' + path, form ? '[multipart]' : body);
+  const res = await fetch(c.baseUrl + path, {
+    method, headers, body: form ? body : (body ? JSON.stringify(body) : undefined),
+  });
+  const raw = await res.text();
+  let data;
+  try { data = JSON.parse(raw); } catch { data = raw; }
+  if (!res.ok) {
+    const detail = (data && data.detail) || raw;
+    log('er', 'HTTP ' + res.status, detail);
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+  }
+  log('in', 'HTTP ' + res.status, data);
+  return data;
+}
+
+/* ── session start ────────────────────────────────────────────────── */
+$('btnStart').onclick = async () => {
+  const c = cfg();
+  if (!c.baseUrl || !c.pat || !c.caseId) return alert('Base URL, PAT and Case ID are required.');
+  SETTING_IDS.forEach(id => store.set("sim." + id, $(id).value.trim()));
+
+  $('chat').innerHTML = '';
+  try {
+    const out = await api('/api/chat/', { body: { case_id: c.caseId } });
+    S.requestId = out.request_id;
+    $('reqPill').textContent = 'request: ' + out.request_id.slice(0, 8);
+    S.labels = {};
+    (out.field_configs || []).forEach(f => (S.labels[f.name] = f.label));
+
+    (out.messages || []).forEach(m => bubble(
+      m.role === 'user' ? 'user' : 'assistant',
+      m.content,
+      (m.attachments || []).map(a => a.file_name).join(', ') || null,
+    ));
+    if (!out.is_resuming || !(out.messages || []).length) bubble('assistant', out.message);
+    else bubble('system', '— resumed, latest message above —');
+
+    setStatus(out.status);
+    setFields(out.fields_collected, out.fields_remaining);
+    if (out.progress || out.progress_label) setProgress(out.progress, out.progress_label);
+    if (out.review_context) renderReview(out.review_context);
+
+    connectSocket();
+  } catch (e) {
+    bubble('system', 'start failed: ' + e.message);
+  }
+};
+
+function setProgress(pct, label) {
+  const n = parseInt(String(pct || '').replace('%', ''), 10);
+  $('progBar').style.width = (isNaN(n) ? 0 : n) + '%';
+  $('progLabel').textContent = (label || '—') + (isNaN(n) ? '' : ` (${n}%)`);
+}
+
+/* ── socket ───────────────────────────────────────────────────────── */
+function connectSocket() {
+  const c = cfg();
+  if (S.socket) S.socket.disconnect();
+
+  S.socket = io(c.baseUrl, { auth: { token: c.pat }, transports: ['websocket', 'polling'] });
+  const s = S.socket;
+
+  s.on('connect', () => {
+    $('socketPill').textContent = 'socket: ' + s.id.slice(0, 6);
+    $('socketPill').className = 'pill on';
+    log('in', 'connect', s.id);
+    s.emit('join_thread', { request_id: S.requestId });
+    log('out', 'join_thread', { request_id: S.requestId });
+  });
+
+  s.on('disconnect', why => {
+    $('socketPill').textContent = 'socket: offline';
+    $('socketPill').className = 'pill off';
+    log('er', 'disconnect', why);
+  });
+
+  s.on('connect_error', e => log('er', 'connect_error', e.message));
+
+  s.onAny((event, payload) => {
+    const quiet = ['chat_response', 'progress_update', 'content_ready_for_review', 'chat_token'];
+    if (quiet.includes(event)) return;
+    log('in', event, payload);
+  });
+
+  // Tokens land as the model writes them; chat_response then carries the settled text.
+  s.on('chat_token', p => {
+    if (p.request_id && S.requestId && p.request_id !== S.requestId) return;
+    if (!S.streamEl) {
+      S.streamEl = bubble('assistant', '', 'streaming…');
+      S.firstToken = ((performance.now() - S.sentAt) / 1000).toFixed(2);
+    }
+    S.streamCount++;
+    S.streamEl.querySelector('.body').textContent += p.token;
+    $('chat').scrollTop = $('chat').scrollHeight;
+  });
+
+  s.on('chat_response', p => {
+    log('in', 'chat_response', {
+      status: p.status, needs_response: p.needs_response,
+      tokens: S.streamCount || 0,
+    });
+    if (p.request_id && S.requestId && p.request_id !== S.requestId) return;
+
+    const total = S.sentAt ? ((performance.now() - S.sentAt) / 1000).toFixed(2) : null;
+    const meta = `${p.status}${p.needs_response ? ' · awaiting reply' : ''}` +
+      (S.streamCount ? ` · ${S.streamCount} tokens · first ${S.firstToken}s / total ${total}s` : '');
+
+    if (S.streamEl) {
+      S.streamEl.querySelector('.body').textContent = p.message;
+      setMeta(S.streamEl, meta);
+      S.streamEl = null;
+      S.streamCount = 0;
+    } else {
+      bubble('assistant', p.message, meta);
+    }
+
+    setStatus(p.status);
+    setFields(p.fields_collected, p.fields_remaining);
+
+    // The parse worker owns the next turn; stay locked until its reply lands.
+    $('btnSend').disabled = !!p.awaiting_document;
+    if (p.awaiting_document) bubble('system', 'input locked — waiting on the parse worker');
+  });
+
+  s.on('progress_update', p => {
+    log('in', 'progress_update', p.progress_status + ' ' + p.progress_label);
+    setProgress(p.progress_status, p.progress_label);
+  });
+
+  s.on('content_ready_for_review', p => {
+    log('in', 'content_ready_for_review', {
+      node_name: p.node_name, is_final_review: p.is_final_review, is_partial: p.is_partial,
+      sections: p.sections ? Object.keys(p.sections) : undefined,
+    });
+    renderReview(p);
+  });
+
+  s.on('chat_input_enabled', () => { $('btnSend').disabled = false; });
+
+  s.on('error', p => {
+    log('er', 'error', p);
+    bubble('system', 'socket error: ' + (p.message || JSON.stringify(p)));
+    $('btnSend').disabled = false;
+  });
+}
+
+$('btnDisconnect').onclick = () => {
+  if (S.socket) S.socket.disconnect();
+};
+
+/* ── sending ──────────────────────────────────────────────────────── */
+function outboundBody(extra = {}) {
+  return { request_id: S.requestId, message: $('msg').value, ...extra };
+}
+
+function sendSocket(body) {
+  if (!S.socket || !S.socket.connected) return alert('Socket is not connected.');
+  log('out', 'send_message', body);
+  S.sentAt = performance.now();
+  S.streamEl = null;
+  S.streamCount = 0;
+  S.firstToken = null;
+  S.socket.emit('send_message', body);
+  $('btnSend').disabled = true;
+}
+
+$('btnSend').onclick = () => {
+  const text = $('msg').value.trim();
+  if (!text) return;
+  bubble('user', text);
+  sendSocket(outboundBody());
+  $('msg').value = '';
+};
+
+$('btnSendHttp').onclick = async () => {
+  const text = $('msg').value.trim();
+  if (!text) return;
+  bubble('user', text, 'via HTTP');
+  const body = outboundBody();
+  $('msg').value = '';
+  try {
+    const out = await api('/api/chat/message', { body });
+    setStatus(out.status);
+    setFields(out.fields_collected, out.fields_remaining);
+  } catch (e) {
+    bubble('system', 'HTTP send failed: ' + e.message);
+  }
+};
+
+$('msg').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('btnSend').click(); }
+});
+
+/* ── upload ───────────────────────────────────────────────────────── */
+$('btnUpload').onclick = async () => {
+  const file = $('file').files[0];
+  if (!file) return alert('Pick a file first.');
+  const fd = new FormData();
+  fd.append('files', file);
+  fd.append('case_id', cfg().caseId);
+  fd.append('upload_type', 'document_generation');
+
+  try {
+    const out = await api('/api/documents/upload', { body: fd, form: true });
+    const fileId = out[0].file_id;
+    bubble('user', (($('msg').value || '') + `\n[${file.name}]`).trim(), 'file_id ' + fileId.slice(0, 8));
+    sendSocket(outboundBody({ file_id: fileId }));
+    $('msg').value = '';
+    $('file').value = '';
+  } catch (e) {
+    bubble('system', 'upload failed: ' + e.message);
+  }
+};
+
+/* ── controls ─────────────────────────────────────────────────────── */
+document.querySelectorAll('button.ctl').forEach(btn => {
+  btn.onclick = async () => {
+    const action = btn.dataset.action;
+    try {
+      const out = await api('/api/chat/control/' + cfg().caseId, { body: { action } });
+      bubble('system', `${action}: ${out.message} (${out.status})`);
+      setStatus(out.status);
+      if (out.request_id && out.request_id !== S.requestId) {
+        S.requestId = out.request_id;
+        $('reqPill').textContent = 'request: ' + out.request_id.slice(0, 8);
+        bubble('system', 'new request_id — rejoining thread');
+        if (S.socket && S.socket.connected) S.socket.emit('join_thread', { request_id: S.requestId });
+      }
+    } catch (e) {
+      bubble('system', `${action} failed: ` + e.message);
+    }
+  };
+});
+
+/* ── review ───────────────────────────────────────────────────────── */
+// Written into markdown_content by the market-research node, but absent from every
+// doc type's make_revise_node() map — ticking it makes node_revise_section raise.
+const NON_REVISABLE = ['market_research_report'];
+
+function renderReview(p) {
+  const isFinal = !!(p.is_final_review || p.node_name === 'node_emit_final_review');
+  S.review = p;
+
+  $('reviewCard').classList.remove('hidden');
+  $('reviewKind').textContent = isFinal ? (p.is_partial ? 'final · patch' : 'final') : 'section';
+  $('reviewTitle').textContent = p.section_title || p.node_name || '';
+  $('reviewHint').textContent = isFinal
+    ? 'Approve resumes the graph; Revise re-runs only the ticked sections with the feedback below.'
+    : 'node_name: ' + p.node_name;
+
+  const body = $('reviewBody');
+
+  if (!isFinal) {
+    S.sections = {};
+    body.innerHTML = '';
+    body.append(sectionBlock(p.node_name, p.section_title, p.markdown_content || '', false));
+    return;
+  }
+
+  // A partial re-emit carries only the sections that changed — patch them in.
+  S.sections = p.is_partial ? { ...S.sections, ...(p.sections || {}) } : { ...(p.sections || {}) };
+  body.innerHTML = '';
+  Object.entries(S.sections).forEach(([key, md]) => {
+    body.append(sectionBlock(key, key.replace(/_/g, ' '), md, true, !!(p.is_partial && p.sections && key in p.sections)));
+  });
+}
+
+function sectionBlock(key, title, markdown, selectable, highlight) {
+  const d = document.createElement('details');
+  d.className = 'section';
+  const sum = document.createElement('summary');
+  const blocked = NON_REVISABLE.includes(key);
+  sum.innerHTML = selectable
+    ? `<input type="checkbox" class="pick" value="${key}" ${blocked ? 'disabled' : ''}> <b>${title}</b>`
+    : `<b>${title}</b>`;
+  if (blocked) sum.innerHTML += ' <span class="pill off">no generator</span>';
+  if (highlight) sum.innerHTML += ' <span class="pill on">updated</span>';
+  const pre = document.createElement('pre');
+  pre.textContent = markdown || '(empty)';
+  d.append(sum, pre);
+  if (highlight) d.open = true;
+  return d;
+}
+
+function reviewContext(action) {
+  const p = S.review || {};
+  const isFinal = !!(p.is_final_review || p.node_name === 'node_emit_final_review');
+
+  if (isFinal) {
+    const picked = [...document.querySelectorAll('.pick:checked')].map(c => c.value);
+    return {
+      node_name: 'node_emit_final_review',
+      section_title: p.section_title,
+      is_final_review: true,
+      action,
+      ...(action === 'revise' ? { selected_sections: picked } : {}),
+    };
+  }
+  return { node_name: p.node_name, section_title: p.section_title, action };
+}
+
+$('btnApprove').onclick = () => {
+  const ctx = reviewContext('approve');
+  const text = $('msg').value.trim() || '承認します';
+  bubble('user', text, 'approve · ' + ctx.node_name);
+  sendSocket({ request_id: S.requestId, message: text, review_context: ctx });
+  $('msg').value = '';
+  $('feedback').value = '';
+  $('reviewCard').classList.add('hidden');
+};
+
+$('btnRevise').onclick = () => {
+  const ctx = reviewContext('revise');
+  if (ctx.is_final_review && !ctx.selected_sections.length) return alert('Tick at least one section.');
+  const text = $('feedback').value.trim();
+  if (!text) return alert('Feedback is required to revise.');
+  bubble('user', text, 'revise · ' + (ctx.selected_sections || [ctx.node_name]).join(', '));
+  sendSocket({ request_id: S.requestId, message: text, review_context: ctx });
+  $('feedback').value = '';
+  $('reviewCard').classList.add('hidden');
+};
+
+$('btnHideReview').onclick = () => $('reviewCard').classList.add('hidden');
+</script>
+</body>
+</html>
