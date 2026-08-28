@@ -439,6 +439,7 @@ function connectSocket() {
     log('in', 'content_ready_for_review', {
       node_name: p.node_name, is_final_review: p.is_final_review, is_partial: p.is_partial,
       sections: p.sections ? Object.keys(p.sections) : undefined,
+      approved_sections: p.approved_sections,
     });
     renderReview(p);
   });
@@ -553,7 +554,7 @@ function renderReview(p) {
   $('reviewKind').textContent = isFinal ? (p.is_partial ? 'final · patch' : 'final') : 'section';
   $('reviewTitle').textContent = p.section_title || p.node_name || '';
   $('reviewHint').textContent = isFinal
-    ? 'Approve resumes the graph; Revise re-runs only the ticked sections with the feedback below.'
+    ? 'Approve with sections ticked approves only those; approve with none ticked writes the document. Revise re-runs the ticked sections.'
     : 'node_name: ' + p.node_name;
 
   const body = $('reviewBody');
@@ -566,7 +567,9 @@ function renderReview(p) {
   }
 
   // A partial re-emit carries only the sections that changed — patch them in.
+  // approved_sections is always the full current set, so it replaces rather than merges.
   S.sections = p.is_partial ? { ...S.sections, ...(p.sections || {}) } : { ...(p.sections || {}) };
+  S.approved = p.approved_sections || [];
   body.innerHTML = '';
   Object.entries(S.sections).forEach(([key, md]) => {
     body.append(sectionBlock(key, key.replace(/_/g, ' '), md, true, !!(p.is_partial && p.sections && key in p.sections)));
@@ -578,10 +581,12 @@ function sectionBlock(key, title, markdown, selectable, highlight) {
   d.className = 'section';
   const sum = document.createElement('summary');
   const blocked = NON_REVISABLE.includes(key);
+  const approved = (S.approved || []).includes(key);
   sum.innerHTML = selectable
     ? `<input type="checkbox" class="pick" value="${key}" ${blocked ? 'disabled' : ''}> <b>${title}</b>`
     : `<b>${title}</b>`;
   if (blocked) sum.innerHTML += ' <span class="pill off">no generator</span>';
+  if (approved) sum.innerHTML += ' <span class="pill on">approved</span>';
   if (highlight) sum.innerHTML += ' <span class="pill on">updated</span>';
   const pre = document.createElement('pre');
   pre.textContent = markdown || '(empty)';
@@ -601,7 +606,9 @@ function reviewContext(action) {
       section_title: p.section_title,
       is_final_review: true,
       action,
-      ...(action === 'revise' ? { selected_sections: picked } : {}),
+      // On approve too: ticked sections are approved and the run stays parked.
+      // An empty list means "approve the whole document" and commits it.
+      selected_sections: picked,
     };
   }
   return { node_name: p.node_name, section_title: p.section_title, action };
