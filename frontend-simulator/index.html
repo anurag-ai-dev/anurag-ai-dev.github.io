@@ -543,7 +543,8 @@ document.querySelectorAll('button.ctl').forEach(btn => {
 
 /* ── review ───────────────────────────────────────────────────────── */
 // Written into markdown_content by the market-research node, but absent from every
-// doc type's make_revise_node() map — ticking it makes node_revise_section raise.
+// doc type's make_revise_node() map — revising it makes node_revise_section raise.
+// It can still be approved: it counts toward the set that commits the document.
 const NON_REVISABLE = ['market_research_report'];
 
 function renderReview(p) {
@@ -574,6 +575,8 @@ function renderReview(p) {
   Object.entries(S.sections).forEach(([key, md]) => {
     body.append(sectionBlock(key, key.replace(/_/g, ' '), md, true, !!(p.is_partial && p.sections && key in p.sections)));
   });
+
+  $('reviewKind').textContent += ` · ${S.approved.length}/${Object.keys(S.sections).length} approved`;
 }
 
 function sectionBlock(key, title, markdown, selectable, highlight) {
@@ -583,9 +586,9 @@ function sectionBlock(key, title, markdown, selectable, highlight) {
   const blocked = NON_REVISABLE.includes(key);
   const approved = (S.approved || []).includes(key);
   sum.innerHTML = selectable
-    ? `<input type="checkbox" class="pick" value="${key}" ${blocked ? 'disabled' : ''}> <b>${title}</b>`
+    ? `<input type="checkbox" class="pick" value="${key}"> <b>${title}</b>`
     : `<b>${title}</b>`;
-  if (blocked) sum.innerHTML += ' <span class="pill off">no generator</span>';
+  if (blocked) sum.innerHTML += ' <span class="pill off">approve only</span>';
   if (approved) sum.innerHTML += ' <span class="pill on">approved</span>';
   if (highlight) sum.innerHTML += ' <span class="pill on">updated</span>';
   const pre = document.createElement('pre');
@@ -627,6 +630,8 @@ $('btnApprove').onclick = () => {
 $('btnRevise').onclick = () => {
   const ctx = reviewContext('revise');
   if (ctx.is_final_review && !ctx.selected_sections.length) return alert('Tick at least one section.');
+  const noGenerator = (ctx.selected_sections || []).filter(s => NON_REVISABLE.includes(s));
+  if (noGenerator.length) return alert(`Cannot revise (no generate node): ${noGenerator.join(', ')}. These can only be approved.`);
   const text = $('feedback').value.trim();
   if (!text) return alert('Feedback is required to revise.');
   bubble('user', text, 'revise · ' + (ctx.selected_sections || [ctx.node_name]).join(', '));
