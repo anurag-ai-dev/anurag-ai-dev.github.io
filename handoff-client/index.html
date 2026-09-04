@@ -1131,7 +1131,7 @@
       voiceRoom = null;
     }
 
-    const headers = { 'X-Shared-Key': cfg('key'), 'Content-Type': 'application/json' };
+    const headers = { 'Authorization': `Bearer ${cfg('pat')}`, 'Content-Type': 'application/json' };
     voiceSignalParams = {
       url: `${cfg('server')}/api/rtc/signal`,
       refreshUrl: `${cfg('server')}/api/rtc/refresh`,
