@@ -80,6 +80,31 @@
   .msg.system { align-self: center; font-size: 12px; color: var(--muted); font-family: var(--mono); }
   .msg .meta { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
 
+  /* system messages (kind:"system") render as a live "thinking" trace, not a bubble */
+  .msg.thinking {
+    align-self: flex-start; max-width: 85%; padding: 8px 11px;
+    background: var(--bg); border: 1px dashed var(--border); border-radius: 10px;
+  }
+  .thinking .head {
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+    font-size: 12px; font-family: var(--mono); color: var(--muted);
+  }
+  .thinking.live .head::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); animation: pulse 1s ease-in-out infinite;
+  }
+  .thinking.done .head::before { content: '✓'; color: var(--ok); font-size: 12px; }
+  .thinking .dots::after { content: '…'; animation: dots 1.4s steps(4, end) infinite; }
+  .thinking .steps { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+  .thinking.collapsed .steps { display: none; }
+  .thinking .step {
+    font-size: 12px; color: var(--muted); padding-left: 14px; position: relative;
+  }
+  .thinking .step::before { content: '·'; position: absolute; left: 3px; }
+  .thinking .step.cur { color: var(--text); }
+  @keyframes pulse { 0%, 100% { opacity: .25; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.1); } }
+  @keyframes dots { 0% { content: ''; } 25% { content: '·'; } 50% { content: '··'; } 75% { content: '···'; } }
+
   .bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
   .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
 
@@ -214,6 +239,7 @@ const S = {
   sections: {},        // section key → markdown (final review)
   streamEl: null,      // bubble currently being filled by chat_token
   streamCount: 0,
+  thinkingEl: null,    // open "thinking" trace collecting kind:"system" messages
   firstToken: null,
   sentAt: 0,
 };
@@ -276,6 +302,39 @@ function setMeta(el, text) {
   m.textContent = text;
 }
 
+// kind:"system" messages are backend status/progress, not the assistant's reply.
+// Collect consecutive ones into one live "thinking" trace; settle it when the
+// real reply (or a review prompt) arrives — the way GPT/Gemini show their steps.
+function pushThinking(text) {
+  if (!S.thinkingEl) {
+    const el = document.createElement('div');
+    el.className = 'msg thinking live';
+    el.innerHTML =
+      '<div class="head"><span class="label">処理中<span class="dots"></span></span>' +
+      '<span class="pill">system</span></div><div class="steps"></div>';
+    el.querySelector('.head').onclick = () => el.classList.toggle('collapsed');
+    $('chat').append(el);
+    S.thinkingEl = el;
+  }
+  S.thinkingEl.querySelectorAll('.step.cur').forEach(s => s.classList.remove('cur'));
+  const step = document.createElement('div');
+  step.className = 'step cur';
+  step.textContent = text;
+  S.thinkingEl.querySelector('.steps').append(step);
+  $('chat').scrollTop = $('chat').scrollHeight;
+}
+
+function settleThinking() {
+  const el = S.thinkingEl;
+  if (!el) return;
+  const n = el.querySelectorAll('.step').length;
+  el.classList.remove('live');
+  el.classList.add('done', 'collapsed');
+  el.querySelector('.label').innerHTML = `${n}件のステータス（クリックで展開）`;
+  el.querySelectorAll('.step.cur').forEach(s => s.classList.remove('cur'));
+  S.thinkingEl = null;
+}
+
 function setStatus(status) {
   $('statusPill').textContent = 'status: ' + (status || '—');
 }
@@ -328,6 +387,7 @@ $('btnStart').onclick = async () => {
   SETTING_IDS.forEach(id => store.set("sim." + id, $(id).value.trim()));
 
   $('chat').innerHTML = '';
+  S.thinkingEl = null;
   try {
     const out = await api('/api/chat/', { body: { case_id: c.caseId } });
     S.requestId = out.request_id;
@@ -336,12 +396,15 @@ $('btnStart').onclick = async () => {
     (out.field_configs || []).forEach(f => (S.labels[f.name] = f.label));
 
     (out.messages || []).forEach(m => bubble(
-      m.role === 'user' ? 'user' : 'assistant',
+      m.role === 'user' ? 'user' : (m.kind === 'system' ? 'system' : 'assistant'),
       m.content,
       (m.attachments || []).map(a => a.file_name).join(', ') || null,
     ));
-    if (!out.is_resuming || !(out.messages || []).length) bubble('assistant', out.message);
-    else bubble('system', '— resumed, latest message above —');
+    if (!out.is_resuming || !(out.messages || []).length) {
+      bubble(out.kind === 'system' ? 'system' : 'assistant', out.message);
+    } else {
+      bubble('system', '— resumed, latest message above —');
+    }
 
     setStatus(out.status);
     setFields(out.fields_collected, out.fields_remaining);
@@ -394,6 +457,7 @@ function connectSocket() {
   s.on('chat_token', p => {
     if (p.request_id && S.requestId && p.request_id !== S.requestId) return;
     if (!S.streamEl) {
+      settleThinking();
       S.streamEl = bubble('assistant', '', 'streaming…');
       S.firstToken = ((performance.now() - S.sentAt) / 1000).toFixed(2);
     }
@@ -404,11 +468,20 @@ function connectSocket() {
 
   s.on('chat_response', p => {
     log('in', 'chat_response', {
-      status: p.status, needs_response: p.needs_response,
+      kind: p.kind, status: p.status, needs_response: p.needs_response,
       tokens: S.streamCount || 0,
     });
     if (p.request_id && S.requestId && p.request_id !== S.requestId) return;
 
+    // Backend status/progress — a thinking step, not the assistant's reply.
+    if (p.kind === 'system') {
+      pushThinking(p.message);
+      setStatus(p.status);
+      setFields(p.fields_collected, p.fields_remaining);
+      return;
+    }
+
+    settleThinking();
     const total = S.sentAt ? ((performance.now() - S.sentAt) / 1000).toFixed(2) : null;
     const meta = `${p.status}${p.needs_response ? ' · awaiting reply' : ''}` +
       (S.streamCount ? ` · ${S.streamCount} tokens · first ${S.firstToken}s / total ${total}s` : '');
@@ -436,6 +509,7 @@ function connectSocket() {
   });
 
   s.on('content_ready_for_review', p => {
+    settleThinking();
     log('in', 'content_ready_for_review', {
       node_name: p.node_name, is_final_review: p.is_final_review, is_partial: p.is_partial,
       sections: p.sections ? Object.keys(p.sections) : undefined,
