@@ -109,11 +109,24 @@
   .bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
   .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
 
-  ul.fields { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; font-size: 12px; }
-  ul.fields li { padding: 2px 0; display: flex; gap: 6px; }
-  ul.fields li span.k { font-family: var(--mono); color: var(--muted); font-size: 11px; }
-  ul.fields li.grp { margin-top: 8px; padding-top: 6px; font-weight: 600; border-top: 1px solid var(--border); justify-content: space-between; }
-  ul.fields li.grp:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+  ol.steps { list-style: none; margin: 8px 0 0; padding: 0; max-height: 420px; overflow-y: auto; font-size: 13px; }
+  ol.steps li.step { display: flex; align-items: center; gap: 9px; padding: 7px 0; }
+  ol.steps li.step .num { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--border);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); flex: none; }
+  ol.steps li.step .lbl { flex: 1; }
+  ol.steps li.step .cnt { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+  ol.steps li.step.active .num { border-color: var(--accent); color: var(--accent); }
+  ol.steps li.step.active .lbl { color: var(--accent); font-weight: 600; }
+  ol.steps li.step.done .num { border-color: var(--ok); color: var(--ok); }
+  ol.steps li.step.todo .lbl { color: var(--muted); }
+  ol.steps li.qa { margin: 0 0 7px 30px; }
+  ol.steps li.qa .q { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 7px 10px; }
+  ol.steps li.qa .a { margin-top: 4px; padding: 4px 10px; color: var(--ok); }
+  ol.steps li.qa .prog { margin-top: 4px; padding: 7px 10px; border: 1px dashed var(--border); border-radius: 9px;
+    color: var(--muted); font-style: italic; }
+  ol.steps li.qa .k { font-family: var(--mono); color: var(--muted); font-size: 10px; margin-top: 3px; }
+  ol.steps li.field { padding: 2px 0 2px 30px; display: flex; gap: 6px; }
+  ol.steps li.field span.k { font-family: var(--mono); color: var(--muted); font-size: 11px; }
   #stepLine { margin: 4px 0 0; }
   .done { color: var(--ok); }
 
@@ -195,9 +208,9 @@
     </div>
 
     <div class="card">
-      <h2>Fields <span id="fieldCount" class="pill">0 / 0</span></h2>
+      <h2>Progress List <span id="fieldCount" class="pill">0 total</span></h2>
       <div id="stepLine" class="hint">—</div>
-      <ul id="fieldList" class="fields"></ul>
+      <ol id="fieldList" class="steps"></ol>
     </div>
   </div>
 
@@ -261,6 +274,9 @@ const S = {
   firstToken: null,
   sentAt: 0,
   voice: { room: null, mic: null, talking: false, agentBubble: null },
+  groups: [],          // field_groups from /start
+  current: null,       // current_field key being asked
+  qa: {},              // field key → { q: question text, a: answer text }
 };
 
 /* ── settings ─────────────────────────────────────────────────────── */
@@ -358,59 +374,96 @@ function setStatus(status) {
   $('statusPill').textContent = 'status: ' + (status || '—');
 }
 
+const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
 function setFields(collected, remaining) {
   if (Array.isArray(collected)) S.collected = collected;
   if (Array.isArray(remaining)) S.remaining = remaining;
+  renderProgress();
+}
+
+// Records the natural-language question asked for a field (from the settled reply).
+function recordQuestion(field, text) {
+  if (!field || !text) return;
+  (S.qa[field] ||= { q: '', a: '' }).q = text;
+}
+
+// Records the user's answer against whatever field was being asked when they replied.
+function recordAnswer(text) {
+  if (!S.current || !text) return;
+  (S.qa[S.current] ||= { q: '', a: '' }).a = text;
+}
+
+function renderProgress() {
   const list = $('fieldList');
   list.innerHTML = '';
   const done = new Set(S.collected);
-  const total = S.collected.length + S.remaining.length;
-  $('fieldCount').textContent = `${S.collected.length} / ${total}`;
+  const inPlay = [...S.collected, ...S.remaining];
+  const askable = new Set(inPlay);
+  const groups = S.groups || [];
 
-  const row = k => {
+  $('fieldCount').textContent = `${inPlay.length} total questions`;
+
+  const stepHeader = (num, label, count, state) => {
     const li = document.createElement('li');
+    li.className = 'step ' + state;
+    li.innerHTML = `<span class="num">${num}</span>
+      <span class="lbl">${esc(label)}</span>
+      <span class="cnt">${count}</span>`;
+    list.append(li);
+  };
+
+  const flatRow = k => {
+    const li = document.createElement('li');
+    li.className = 'field';
     const isDone = done.has(k);
     li.innerHTML = `<span>${isDone ? '✓' : '·'}</span>
-      <span class="${isDone ? 'done' : ''}">${S.labels[k] || k}</span>
+      <span class="${isDone ? 'done' : ''}">${esc(S.labels[k] || k)}</span>
       <span class="k">${k}</span>`;
     list.append(li);
   };
-  const header = (label, count) => {
-    const li = document.createElement('li');
-    li.className = 'grp';
-    li.innerHTML = `<span>${label}</span><span class="k">${count}</span>`;
-    list.append(li);
-  };
 
-  const groups = S.groups || [];
-  if (!groups.length) {                       // no grouping (e.g. visa) → flat list
+  // No grouping (e.g. visa) → flat field list, no stepper.
+  if (!groups.length) {
     $('stepLine').textContent = '';
-    S.collected.forEach(row);
-    S.remaining.forEach(row);
+    inPlay.forEach(flatRow);
     return;
   }
 
-  // A group's fields are static; gated-off fields are neither collected nor remaining,
-  // so measure progress against only the fields still in play (collected ∪ remaining).
-  const askable = new Set([...S.collected, ...S.remaining]);
-  const seen = new Set();
-  let activeIdx = groups.length;              // first group with a pending field
+  // Active step = first group with a pending askable field.
+  let activeIdx = groups.findIndex(g => g.fields.some(k => askable.has(k) && !done.has(k)));
+  if (activeIdx < 0) activeIdx = groups.length;
+
   groups.forEach((g, i) => {
-    const relevant = g.fields.filter(k => askable.has(k));
+    const relevant = g.fields.filter(k => askable.has(k));       // gating-aware
     const gDone = relevant.filter(k => done.has(k)).length;
-    if (gDone < relevant.length && i < activeIdx) activeIdx = i;
-    header(g.label, `${gDone}/${relevant.length}`);
-    g.fields.forEach(k => { seen.add(k); row(k); });
+    const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'todo';
+    stepHeader(state === 'done' ? '✓' : i + 1, g.label, `${gDone}/${relevant.length}`, state);
+
+    // Only the active section expands to show the actual Q&A + the live question.
+    if (state !== 'active') return;
+    relevant.forEach(k => {
+      const qa = S.qa[k];
+      const asking = k === S.current && !done.has(k);
+      if (!qa && !asking) return;                                // not reached yet
+      const li = document.createElement('li');
+      li.className = 'qa';
+      const answer = qa && qa.a
+        ? `<div class="a">${esc(qa.a)}</div>`
+        : (asking ? '<div class="prog">In progress…</div>' : '');
+      li.innerHTML =
+        (qa && qa.q ? `<div class="q">${esc(qa.q)}</div>` : '') +
+        answer +
+        `<div class="k">${k}</div>`;
+      list.append(li);
+    });
   });
 
-  const orphans = [...S.collected, ...S.remaining].filter(k => !seen.has(k));
-  if (orphans.length) {                       // keys no group claimed — flag drift
-    header('Other', orphans.length);
-    orphans.forEach(row);
-  }
+  const orphans = inPlay.filter(k => !groups.some(g => g.fields.includes(k)));
+  if (orphans.length) stepHeader('–', 'Other', orphans.length, 'todo');
 
   $('stepLine').textContent = activeIdx < groups.length
-    ? `Step ${activeIdx + 1} of ${groups.length} · ${groups[activeIdx].label}`
+    ? `Step ${activeIdx + 1} of ${groups.length}`
     : `Complete · ${groups.length} sections`;
 }
 
@@ -452,6 +505,8 @@ $('btnStart').onclick = async () => {
     S.labels = {};
     (out.field_configs || []).forEach(f => (S.labels[f.name] = f.label));
     S.groups = out.field_groups || [];
+    S.current = out.current_field ?? null;
+    S.qa = {};                              // fresh Q&A trace per session/resume
 
     (out.messages || []).forEach(m => bubble(
       m.role === 'user' ? 'user' : (m.kind === 'system' ? 'system' : 'assistant'),
@@ -531,6 +586,8 @@ function connectSocket() {
     });
     if (p.request_id && S.requestId && p.request_id !== S.requestId) return;
 
+    if (p.current_field !== undefined) S.current = p.current_field;
+
     // Backend status/progress — a thinking step, not the assistant's reply.
     if (p.kind === 'system') {
       pushThinking(p.message);
@@ -540,6 +597,9 @@ function connectSocket() {
     }
 
     settleThinking();
+
+    // The settled reply is the question just asked for the current field.
+    recordQuestion(S.current, p.message);
 
     // In voice mode the reply already arrived over the LiveKit data channel; the
     // settled chat_response just updates status/fields, not a duplicate text bubble.
@@ -614,6 +674,8 @@ function voiceData(payload) {
   catch { return; }
   if (msg.type === 'user_transcript') {
     bubble('user', msg.text, 'voice');
+    recordAnswer(msg.text);
+    renderProgress();
   } else if (msg.type === 'agent_text') {
     if (!S.voice.agentBubble) S.voice.agentBubble = bubble('assistant', '', 'voice…');
     if (msg.final) {
@@ -728,6 +790,7 @@ $('btnSend').onclick = () => {
   const text = $('msg').value.trim();
   if (!text) return;
   bubble('user', text);
+  recordAnswer(text);
   sendSocket(outboundBody());
   $('msg').value = '';
 };
@@ -736,6 +799,7 @@ $('btnSendHttp').onclick = async () => {
   const text = $('msg').value.trim();
   if (!text) return;
   bubble('user', text, 'via HTTP');
+  recordAnswer(text);
   const body = outboundBody();
   $('msg').value = '';
   try {
