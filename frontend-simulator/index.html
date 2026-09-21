@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BizJapan chat simulator</title>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
 <style>
   :root {
     --bg: #f6f7f9;
@@ -138,6 +139,7 @@
 <header>
   <h1>BizJapan chat simulator</h1>
   <span id="socketPill" class="pill off">socket: offline</span>
+  <span id="voicePill" class="pill">voice: idle</span>
   <span id="statusPill" class="pill">status: —</span>
   <span id="reqPill" class="pill">request: —</span>
 </header>
@@ -161,6 +163,18 @@
         <button id="btnDisconnect">Disconnect</button>
       </div>
       <div class="hint">POST /api/chat/ → socket connect → join_thread. Settings persist in localStorage.</div>
+    </div>
+
+    <div class="card">
+      <h2>Voice (LiveKit)</h2>
+      <div class="row">
+        <button id="btnVoiceJoin" class="primary">Join voice</button>
+        <button id="btnVoiceLeave" class="danger">Leave</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="btnTalk">🎙 Talk</button>
+      </div>
+      <div class="hint">POST /api/rtc/signal {request_id} → join room → Talk publishes mic, Stop commits the utterance (STT → turn → TTS). Settled replies still arrive as chat_response.</div>
     </div>
 
     <div class="card">
@@ -246,6 +260,7 @@ const S = {
   thinkingEl: null,    // open "thinking" trace collecting kind:"system" messages
   firstToken: null,
   sentAt: 0,
+  voice: { room: null, mic: null, talking: false, agentBubble: null },
 };
 
 /* ── settings ─────────────────────────────────────────────────────── */
@@ -375,12 +390,16 @@ function setFields(collected, remaining) {
     return;
   }
 
+  // A group's fields are static; gated-off fields are neither collected nor remaining,
+  // so measure progress against only the fields still in play (collected ∪ remaining).
+  const askable = new Set([...S.collected, ...S.remaining]);
   const seen = new Set();
   let activeIdx = groups.length;              // first group with a pending field
   groups.forEach((g, i) => {
-    const gDone = g.fields.filter(k => done.has(k)).length;
-    if (gDone < g.fields.length && i < activeIdx) activeIdx = i;
-    header(g.label, `${gDone}/${g.fields.length}`);
+    const relevant = g.fields.filter(k => askable.has(k));
+    const gDone = relevant.filter(k => done.has(k)).length;
+    if (gDone < relevant.length && i < activeIdx) activeIdx = i;
+    header(g.label, `${gDone}/${relevant.length}`);
     g.fields.forEach(k => { seen.add(k); row(k); });
   });
 
@@ -521,6 +540,19 @@ function connectSocket() {
     }
 
     settleThinking();
+
+    // In voice mode the reply already arrived over the LiveKit data channel; the
+    // settled chat_response just updates status/fields, not a duplicate text bubble.
+    const vb = S.voice.agentBubble;
+    if (vb || (S.voice.room && !S.streamEl)) {
+      if (vb) setMeta(vb, `${p.status}${p.needs_response ? ' · awaiting reply' : ''} · voice`);
+      setStatus(p.status);
+      setFields(p.fields_collected, p.fields_remaining);
+      $('btnSend').disabled = !!p.awaiting_document;
+      if (p.awaiting_document) bubble('system', 'input locked — waiting on the parse worker');
+      return;
+    }
+
     const total = S.sentAt ? ((performance.now() - S.sentAt) / 1000).toFixed(2) : null;
     const meta = `${p.status}${p.needs_response ? ' · awaiting reply' : ''}` +
       (S.streamCount ? ` · ${S.streamCount} tokens · first ${S.firstToken}s / total ${total}s` : '');
@@ -568,6 +600,112 @@ function connectSocket() {
 
 $('btnDisconnect').onclick = () => {
   if (S.socket) S.socket.disconnect();
+};
+
+/* ── voice (LiveKit) ──────────────────────────────────────────────── */
+function setVoicePill(text, on) {
+  $('voicePill').textContent = 'voice: ' + text;
+  $('voicePill').className = 'pill' + (on === true ? ' on' : on === false ? ' off' : '');
+}
+
+function voiceData(payload) {
+  let msg;
+  try { msg = JSON.parse(new TextDecoder().decode(payload)); }
+  catch { return; }
+  if (msg.type === 'user_transcript') {
+    bubble('user', msg.text, 'voice');
+  } else if (msg.type === 'agent_text') {
+    if (!S.voice.agentBubble) S.voice.agentBubble = bubble('assistant', '', 'voice…');
+    if (msg.final) {
+      S.voice.agentBubble.querySelector('.body').textContent = msg.text;
+      setMeta(S.voice.agentBubble, 'voice');
+      S.voice.agentBubble = null;
+    } else {
+      S.voice.agentBubble.querySelector('.body').textContent += msg.text;
+    }
+    $('chat').scrollTop = $('chat').scrollHeight;
+  } else if (msg.type === 'chatbot_response') {
+    log('in', 'voice chatbot_response', { status: msg.status, needs_response: msg.needs_response });
+  }
+}
+
+$('btnVoiceJoin').onclick = async () => {
+  if (typeof LivekitClient === 'undefined') return alert('livekit-client CDN failed to load.');
+  if (!S.requestId) return alert('Start a session first.');
+  if (S.voice.room) return;
+  try {
+    setVoicePill('joining');
+    const sig = await api('/api/rtc/signal', { body: { request_id: S.requestId } });
+    const room = new LivekitClient.Room();
+    room.on(LivekitClient.RoomEvent.TrackSubscribed, track => {
+      if (track.kind === LivekitClient.Track.Kind.Audio) {
+        const el = track.attach();
+        el.autoplay = true;
+        document.body.appendChild(el);
+        log('in', 'voice agent-audio attached');
+      }
+    });
+    room.on(LivekitClient.RoomEvent.DataReceived, payload => voiceData(payload));
+    room.on(LivekitClient.RoomEvent.Disconnected, () => {
+      S.voice.room = null;
+      setVoicePill('idle');
+    });
+    await room.connect(sig.livekit_url, sig.access_token);
+    S.voice.room = room;
+    setVoicePill('in room ' + sig.room_name.slice(0, 24), true);
+    bubble('system', 'voice joined: ' + sig.room_name);
+  } catch (e) {
+    setVoicePill('join failed', false);
+    bubble('system', 'voice join failed: ' + e.message);
+  }
+};
+
+async function makeMicTrack() {
+  const opts = { echoCancellation: true, noiseSuppression: true };
+  if (typeof LivekitClient.createLocalAudioTrack === 'function') {
+    return await LivekitClient.createLocalAudioTrack(opts);
+  }
+  const tracks = await LivekitClient.createLocalTracks({ audio: opts });
+  const mic = tracks.find(t => t.kind === LivekitClient.Track.Kind.Audio);
+  if (!mic) throw new Error('no local audio track available');
+  return mic;
+}
+
+$('btnTalk').onclick = async () => {
+  const room = S.voice.room;
+  if (!room) return alert('Join voice first.');
+  try {
+    if (!S.voice.talking) {
+      S.voice.mic = await makeMicTrack();
+      await room.localParticipant.publishTrack(S.voice.mic);
+      S.voice.talking = true;
+      $('btnTalk').textContent = '■ Stop (commit utterance)';
+      setVoicePill('listening…', true);
+    } else {
+      await room.localParticipant.unpublishTrack(S.voice.mic);
+      S.voice.mic.stop();
+      S.voice.mic = null;
+      S.voice.talking = false;
+      $('btnTalk').textContent = '🎙 Talk';
+      setVoicePill('processing…', true);
+      bubble('system', 'utterance committed — transcribing');
+    }
+  } catch (e) {
+    bubble('system', 'mic failed: ' + e.message);
+  }
+};
+
+$('btnVoiceLeave').onclick = async () => {
+  if (S.voice.mic) {
+    try { await S.voice.room.localParticipant.unpublishTrack(S.voice.mic); } catch {}
+    S.voice.mic.stop();
+    S.voice.mic = null;
+  }
+  if (S.voice.room) await S.voice.room.disconnect();
+  S.voice.room = null;
+  S.voice.talking = false;
+  $('btnTalk').textContent = '🎙 Talk';
+  setVoicePill('idle');
 };
 
 /* ── sending ──────────────────────────────────────────────────────── */
