@@ -108,9 +108,12 @@
   .bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
   .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
 
-  ul.fields { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; font-size: 12px; }
+  ul.fields { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; font-size: 12px; }
   ul.fields li { padding: 2px 0; display: flex; gap: 6px; }
   ul.fields li span.k { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+  ul.fields li.grp { margin-top: 8px; padding-top: 6px; font-weight: 600; border-top: 1px solid var(--border); justify-content: space-between; }
+  ul.fields li.grp:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+  #stepLine { margin: 4px 0 0; }
   .done { color: var(--ok); }
 
   #log { height: 260px; overflow-y: auto; font-family: var(--mono); font-size: 11px; }
@@ -179,6 +182,7 @@
 
     <div class="card">
       <h2>Fields <span id="fieldCount" class="pill">0 / 0</span></h2>
+      <div id="stepLine" class="hint">—</div>
       <ul id="fieldList" class="fields"></ul>
     </div>
   </div>
@@ -344,17 +348,51 @@ function setFields(collected, remaining) {
   if (Array.isArray(remaining)) S.remaining = remaining;
   const list = $('fieldList');
   list.innerHTML = '';
-  const render = (keys, done) => keys.forEach(k => {
-    const li = document.createElement('li');
-    li.innerHTML = `<span>${done ? '✓' : '·'}</span>
-      <span class="${done ? 'done' : ''}">${S.labels[k] || k}</span>
-      <span class="k">${k}</span>`;
-    list.append(li);
-  });
-  render(S.collected, true);
-  render(S.remaining, false);
+  const done = new Set(S.collected);
   const total = S.collected.length + S.remaining.length;
   $('fieldCount').textContent = `${S.collected.length} / ${total}`;
+
+  const row = k => {
+    const li = document.createElement('li');
+    const isDone = done.has(k);
+    li.innerHTML = `<span>${isDone ? '✓' : '·'}</span>
+      <span class="${isDone ? 'done' : ''}">${S.labels[k] || k}</span>
+      <span class="k">${k}</span>`;
+    list.append(li);
+  };
+  const header = (label, count) => {
+    const li = document.createElement('li');
+    li.className = 'grp';
+    li.innerHTML = `<span>${label}</span><span class="k">${count}</span>`;
+    list.append(li);
+  };
+
+  const groups = S.groups || [];
+  if (!groups.length) {                       // no grouping (e.g. visa) → flat list
+    $('stepLine').textContent = '';
+    S.collected.forEach(row);
+    S.remaining.forEach(row);
+    return;
+  }
+
+  const seen = new Set();
+  let activeIdx = groups.length;              // first group with a pending field
+  groups.forEach((g, i) => {
+    const gDone = g.fields.filter(k => done.has(k)).length;
+    if (gDone < g.fields.length && i < activeIdx) activeIdx = i;
+    header(g.label, `${gDone}/${g.fields.length}`);
+    g.fields.forEach(k => { seen.add(k); row(k); });
+  });
+
+  const orphans = [...S.collected, ...S.remaining].filter(k => !seen.has(k));
+  if (orphans.length) {                       // keys no group claimed — flag drift
+    header('Other', orphans.length);
+    orphans.forEach(row);
+  }
+
+  $('stepLine').textContent = activeIdx < groups.length
+    ? `Step ${activeIdx + 1} of ${groups.length} · ${groups[activeIdx].label}`
+    : `Complete · ${groups.length} sections`;
 }
 
 /* ── HTTP ─────────────────────────────────────────────────────────── */
@@ -394,6 +432,7 @@ $('btnStart').onclick = async () => {
     $('reqPill').textContent = 'request: ' + out.request_id.slice(0, 8);
     S.labels = {};
     (out.field_configs || []).forEach(f => (S.labels[f.name] = f.label));
+    S.groups = out.field_groups || [];
 
     (out.messages || []).forEach(m => bubble(
       m.role === 'user' ? 'user' : (m.kind === 'system' ? 'system' : 'assistant'),
